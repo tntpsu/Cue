@@ -89,6 +89,35 @@ let autoPausedReason = ''
 // v0.4.0 settings — hydrated from storage on bootstrap.
 let showDebugOverlay = false  // diagnostic stats line on glasses
 let wearerSpeakerId = DEFAULT_WEARER_SPEAKER_ID  // -1 = none / no filter
+
+// Live transport health, so a failing session is visible instead of silent.
+//
+// Per-chunk errors used to go only to console.warn, and the glasses `err:` line
+// is gated behind the diagnostic overlay, which is OFF by default. That made
+// the most likely real-world failure — a Deepgram quota running out mid
+// conversation — indistinguishable from nobody talking: every chunk 429s, the
+// last suggestion stays on screen, and the wearer assumes it is just quiet.
+//
+// One transient blip is not worth alarming about (the next chunk usually
+// succeeds), so the banner only appears after CHUNK_FAIL_ALERT_AT consecutive
+// failures and clears on the first success.
+const CHUNK_FAIL_ALERT_AT = 2
+let consecutiveChunkFailures = 0
+let transportAlert: string | null = null
+
+/** Compact, glasses-sized label for a transport error. The full sentence from
+ *  transport's explainHttp is right for the phone and far too long for a
+ *  576px line. */
+function shortTransportAlert(msg: string): string {
+  const m = /HTTP (\d+)/.exec(msg)
+  const status = m ? Number(m[1]) : null
+  if (status === 401 || status === 403) return 'key rejected'
+  if (status === 429) return 'rate limited'
+  if (status === 404 || status === 405) return 'worker URL wrong'
+  if (status !== null && status >= 500) return 'worker error'
+  if (/network/i.test(msg)) return 'no connection'
+  return 'transcribe failing'
+}
 // v0.4.2: when true, the next non-empty utterance's speaker is anchored
 // as wearer + the flag is cleared. Set by phone-side "Calibrate me".
 let calibratingNow = false
@@ -453,6 +482,15 @@ function renderGlasses(): string {
   } else {
     lines.push(proactiveActive ? 'Fresh topics:' : 'Listening…')
   }
+  // Transport failure banner. Deliberately NOT gated on showDebugOverlay:
+  // this is the difference between "nobody is talking" and "your key expired",
+  // and the wearer cannot tell those apart from the display alone.
+  if (transportAlert) {
+    // Plain ASCII on purpose: '⚠' (U+26A0) measures 4px in the firmware font,
+    // i.e. it is missing and would draw as a box — the very bug this banner
+    // exists to make visible.
+    lines.push(`ERR ${transportAlert}`)
+  }
   // Diagnostic stats — gated on showDebugOverlay. Default OFF; toggle
   // on via phone-side "Show diagnostic overlay on glasses." Same info
   // as before: audio frames flowing, chunk success rate, last error.
@@ -623,10 +661,19 @@ async function startRealSession(): Promise<void> {
   // network blips during the session come back via the onError callback.
   try {
     await transport.startMicSession(onTranscriptFrame, msg => {
-      // Per-chunk transport error mid-session. Log but don't kill the
-      // session; the next chunk still has a chance.
+      // Per-chunk transport error mid-session. Don't kill the session — the
+      // next chunk still has a chance — but do NOT let it fail silently.
       // eslint-disable-next-line no-console
       console.warn('[cue] transcribe error:', msg)
+      consecutiveChunkFailures += 1
+      if (consecutiveChunkFailures >= CHUNK_FAIL_ALERT_AT) {
+        transportAlert = shortTransportAlert(msg)
+        if (status) {
+          status.style.color = '#c00'
+          status.textContent = `Transcription failing — ${msg}`
+        }
+        void even?.render(renderGlasses())
+      }
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -658,6 +705,16 @@ async function startRealSession(): Promise<void> {
 }
 
 function onTranscriptFrame(e: TranscriptEvent): void {
+  // A frame arrived, so the pipeline is healthy again — clear any failure
+  // banner. Recovery must be as visible as the failure was.
+  if (consecutiveChunkFailures > 0 || transportAlert !== null) {
+    consecutiveChunkFailures = 0
+    transportAlert = null
+    if (status) {
+      status.style.color = ''
+      status.textContent = 'Listening.'
+    }
+  }
   // v0.4.0: prefer per-speaker utterances when available so we can show
   // [A]/[B] labels and exclude the wearer's own words from the suggestion
   // prompt. Falls back to whole-chunk text when the worker / Deepgram
