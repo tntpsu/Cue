@@ -22,6 +22,10 @@ Full taxonomy + discipline: `~/.claude/skills/coverage-matrix/SKILL.md`. Empty c
 | Idle auto-pause after 5 min | manual:hw | n/a | n/a | n/a | n/a | n/a |
 | Render loop emits state logs while mic on | e2e:5 | n/a | n/a | n/a | n/a | n/a |
 | Tap to stop mic returns to idle | e2e:4 | n/a | n/a | n/a | n/a | n/a |
+| Every glyph drawn on the glasses exists in the firmware font — getTextWidth returns 20 for a supported symbol and 4 for the missing-glyph fallback, which draws as a box while looking fine in the editor and simulator | unit:glyphs (all mode glyphs, status indicators, battery at 8 charge levels, full non-ASCII sweep) | unit:glyphs (pins ⚡ ◉ ◼ ↳ ✓ as known-broken so the rule itself is guarded) | n/a | n/a | n/a |
+| Phone panel does not overflow at iPhone widths — <main> keeps overflow-x hidden and every form control stays in the viewport (the two bugs that got Euchre v0.3.0 and Hearts v0.1.5 rejected) | `npm run test:webkit:layout` — WebKit at 320/390/430px, 18 checks | test:webkit:layout (reports the widest offending element) | n/a | n/a | manual trigger, needs `npm run dev` |
+| A failing session is visible rather than silent — 2 consecutive chunk failures raise a compact glasses banner + full phone message; first good frame clears both | unit:transport-alert (9 status→label cases) | unit:transport-alert (unknown message falls back) | n/a | n/a | banner is plain ASCII; '⚠' measures 4px and would draw as a box |
+| Mic permission text matches behaviour — audio never stored, transcribed text IS kept on the phone (last 50 sessions, other speakers' words only, clearable in settings) | manual:review (app.json ↔ storage.ts SessionRecord + clearSessionHistory) | n/a | n/a | n/a | **rejection-class if it drifts again** |
 
 ## By dimension (status)
 
