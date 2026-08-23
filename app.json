@@ -9,7 +9,7 @@
   "permissions": [
     {
       "name": "g2-microphone",
-      "desc": "Captures the conversation around you to suggest responses on the glasses display. Audio is streamed to your personal Cloudflare Worker for transcription and never persisted by Cue. Mic is OFF by default and requires explicit per-session opt-in."
+      "desc": "Captures the conversation around you to suggest responses on the glasses display. Audio is streamed to your personal Cloudflare Worker for transcription and is never stored, by Cue or the Worker. Transcribed text IS saved on your phone: Cue keeps the last 50 mic sessions so you can review them in settings, and each record holds the other speakers' words (your own lines are excluded). Clear the history at any time from phone-side settings. The mic is OFF by default and requires explicit per-session opt-in."
     },
     {
       "name": "network",
@@ -19,5 +19,7 @@
       ]
     }
   ],
-  "supported_languages": ["en"]
+  "supported_languages": [
+    "en"
+  ]
 }

@@ -124,7 +124,7 @@ describe('Cue plugin with mocked bridge', () => {
     await bootMocked({ 'cue:privacy-agreed:v1': '1' })
     // Bootstrap finished and called even.render at least once with the
     // idle screen. Battery 80 → solid glyph + percent.
-    expect(fake.lastRender()).toMatch(/◼80%/)
+    expect(fake.lastRender()).toMatch(/■80%/)
     expect(fake.lastRender()).toMatch(/mic off/)
   })
 

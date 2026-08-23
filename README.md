@@ -6,6 +6,8 @@ A multi-mode conversation coach for Even Realities G2 smart glasses. Listens to 
 
 ## Status: v0.4.3 (per-session transcript persistence — review past conversations on phone)
 
+> **Distribution blocker:** the Even Hub network whitelist is a static list of exact origins fixed at pack time — no wildcards, no runtime hosts ([docs](https://hub.evenrealities.com/docs/build/networking)). The BYO-Worker flow below therefore only works for whoever packed the `.ehpk`; a second user's own Worker URL is blocked before the request leaves the WebView. Distributing Cue needs the Worker to become a fixed origin with **user-supplied API keys**. Tracked as the top item before any listing.
+
 If you've deployed the personal Worker (see `worker-template/README.md`) and pasted its URL + bearer token in phone settings, Cue streams audio over chunked HTTP → Deepgram for transcription, and POSTs your rolling transcript to the Worker's `/suggest` endpoint for LLM suggestions. If those settings are blank or the Worker is unreachable, Cue falls back to the v0.1.0 timer-driven mock suggestions so the app stays demonstrable.
 
 | Version | What's in it |
@@ -16,8 +18,12 @@ If you've deployed the personal Worker (see `worker-template/README.md`) and pas
 | v0.3.0 | End-of-utterance detection (sentence-final punctuation + silence-gap + max-wait), sentence-aware transcript trimming, battery glyph in glasses header, idle auto-pause after 5 min, word-boundary line wrap on suggestions, per-mode bullet glyphs, first-word emphasis. |
 | v0.3.1 | Phone-side `idle-auto-pause-min` setting — was a 5-min hardcode. 0 disables. |
 | v0.3.2 | Battery glyph now appears on idle screen (was only visible mid-session). Mock-bridge JSDOM coverage for v0.3 state machine (auto-pause, mode cycle, foreground re-paint). Stale `wss://` whitelist entry removed (chunked HTTP supplanted WebSocket in v0.2.5). |
-| **v0.3.3** *(current)* | Mock-mode adds a longer-suggestion entry that exercises the v0.3 word-wrap path + custom-mode coverage (no more silent fallback to date-mode). `lint-app-json.mjs` extended to auto-detect whitelist gaps + stale entries by greping `src/`. Regression script gains a `countStateLogs` render-loop liveness assertion (would catch a silent main-loop death). |
-| v0.4.0 *(planned)* | Worker-side dedupe of repeated suggestions, retry/backoff on rate-limit, partial-transcript pulses if Deepgram streaming becomes available. |
+| v0.3.3 | Mock-mode adds a longer-suggestion entry that exercises the v0.3 word-wrap path + custom-mode coverage (no more silent fallback to date-mode). `lint-app-json.mjs` extended to auto-detect whitelist gaps + stale entries by greping `src/`. Regression script gains a `countStateLogs` render-loop liveness assertion (would catch a silent main-loop death). |
+| v0.4.0 | Speaker diarization — Worker requests `diarize=true&utterances=true`; per-speaker turns parsed into the transcript; wearer's own lines excluded from the suggestion context. |
+| v0.4.1 | Phone-side speaker selector + `(you)` markers in the transcript view. |
+| v0.4.2 | "Calibrate me" — one tap anchors the next speaker heard as the wearer, persisted across reload. |
+| **v0.4.3** *(current)* | Per-session transcript persistence: one record per mic-on/mic-off pair (mode, other speakers' transcript, suggestion count), capped at 50 newest-first, reviewable and clearable in phone settings. |
+| v0.5.0 *(planned)* | User-supplied API keys so the app is distributable (see blocker above). Worker-side dedupe of repeated suggestions, retry/backoff on rate-limit. |
 
 ## How it works (current v0.2.0)
 

@@ -152,13 +152,13 @@ describe('batteryHeaderSuffix', () => {
     expect(batteryHeaderSuffix(NaN)).toBe('')
   })
   it('uses solid glyph above 20%', () => {
-    expect(batteryHeaderSuffix(75)).toBe('◼75%')
+    expect(batteryHeaderSuffix(75)).toBe('■75%')
   })
   it('uses warning glyph below 20%', () => {
     expect(batteryHeaderSuffix(12)).toBe('○12%')
   })
   it('clamps out-of-range values', () => {
-    expect(batteryHeaderSuffix(150)).toBe('◼100%')
+    expect(batteryHeaderSuffix(150)).toBe('■100%')
     expect(batteryHeaderSuffix(-10)).toBe('○0%')
   })
 })

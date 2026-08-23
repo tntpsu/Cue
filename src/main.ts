@@ -156,7 +156,7 @@ const root = document.querySelector<HTMLDivElement>('#app')
 if (!root) throw new Error('App root missing')
 
 root.innerHTML = `
-  <main style="font-family: system-ui; padding: 1rem; max-width: 720px; margin: 0 auto; color: #232323;">
+  <main style="font-family: system-ui; padding: 1rem; max-width: 720px; margin: 0 auto; color: #232323; overflow-x: hidden; overscroll-behavior: contain;">
     <h1 style="margin: 0 0 .25rem 0;">Cue <span style="font-size: .55em; color: #7b7b7b; font-weight: 400;">v${__APP_VERSION__}</span></h1>
     <p style="color: #7b7b7b; margin: 0 0 1rem 0;">Helps you say the right thing.</p>
     <p id="status" style="margin: 0 0 1rem 0;">Connecting…</p>
@@ -230,7 +230,7 @@ root.innerHTML = `
         <hr style="border: 0; border-top: 1px solid #eee; margin: .5rem 0;" />
 
         <label>Which speaker is you?
-          <select id="wearer-speaker-id" style="padding: .35rem; margin-left: .5rem;">
+          <select id="wearer-speaker-id" style="padding: .35rem; margin-left: .5rem; max-width: 100%; box-sizing: border-box;">
             <option value="-1">None / auto-detect (don't filter)</option>
             <option value="0">Speaker A is me</option>
             <option value="1">Speaker B is me</option>

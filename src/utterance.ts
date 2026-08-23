@@ -216,12 +216,17 @@ export function speakerLabel(id: number): string {
 
 /**
  * Render a battery glyph + percent suffix for the glasses header.
- * Uses Unicode characters confirmed safe on the LVGL renderer.
+ *
+ * Both glyphs are MEASURED safe, not assumed: getTextWidth returns 20 for a
+ * glyph the firmware font has and 4 for the missing-glyph fallback. This
+ * previously used ◼ (U+25FC), which measures 4 — so the battery indicator drew
+ * as a box for any charge above 20%, i.e. almost always. ■ (U+25A0) is the
+ * filled square the font actually has. Guarded by tests/glyphs.test.ts.
  */
 export function batteryHeaderSuffix(level: number | undefined): string {
   if (typeof level !== 'number' || !Number.isFinite(level)) return ''
   const pct = Math.max(0, Math.min(100, Math.round(level)))
   // Solid block when above 20%, hollow ring under 20% as a visual warning.
-  const glyph = pct < 20 ? '○' : '◼'
+  const glyph = pct < 20 ? '○' : '■'
   return `${glyph}${pct}%`
 }

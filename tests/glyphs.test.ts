@@ -13,6 +13,7 @@
 import { describe, expect, it } from 'vitest'
 import { getTextWidth } from '@evenrealities/pretext'
 import { MODES } from '../src/modes'
+import { batteryHeaderSuffix } from '../src/utterance'
 
 /** Width of a glyph the font actually has. */
 const SUPPORTED_PX = 20
@@ -38,9 +39,32 @@ describe('glasses glyphs exist in the firmware font', () => {
     for (const g of ['◎', '◌']) expect(getTextWidth(g)).toBe(SUPPORTED_PX)
   })
 
+  it('battery header glyphs render at every charge level', () => {
+    // ◼ (U+25FC) measured 4 and drew as a box above 20% charge — i.e. nearly
+    // always — while the doc comment claimed it was "confirmed safe".
+    for (const level of [0, 5, 19, 20, 21, 50, 99, 100]) {
+      const suffix = batteryHeaderSuffix(level)
+      expect(suffix).not.toBe('')
+      const glyph = suffix[0]!
+      const w = getTextWidth(glyph)
+      expect(w, `battery glyph ${glyph} at ${level}% measures ${w}px`).toBe(SUPPORTED_PX)
+    }
+  })
+
+  it('every non-ASCII character reaching the glasses is in the font', () => {
+    // Sweep rather than spot-check: anything drawn on the display must measure
+    // 20 (symbols) or a real proportional width (punctuation). Only the
+    // missing-glyph fallback of exactly 4 is disqualifying.
+    const drawn = ['★', '◇', '▶', '▲', '●', '▣', '◆', '◎', '◌', '○', '■', '—', '…', '→', '·']
+    for (const ch of drawn) {
+      expect(getTextWidth(ch), `${ch} (U+${ch.codePointAt(0)!.toString(16).toUpperCase()}) is missing from the font`)
+        .not.toBe(MISSING_PX)
+    }
+  })
+
   it('the known-broken glyphs are still broken (guards the rule itself)', () => {
     // If a future font update fixes these, this test fails and the rule above
     // needs revisiting rather than being quietly wrong.
-    for (const g of ['⚡', '◉']) expect(getTextWidth(g)).toBe(MISSING_PX)
+    for (const g of ['⚡', '◉', '◼', '↳', '✓']) expect(getTextWidth(g)).toBe(MISSING_PX)
   })
 })

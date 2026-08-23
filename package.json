@@ -21,7 +21,8 @@
     "test:e2e": "node scripts/regression.mjs",
     "test:worker": "cd worker-template && node scripts/test-worker.mjs",
     "test:webkit": "node scripts/test-webkit.mjs",
-    "test:all": "npm run test && npm run lint:app-json"
+    "test:all": "npm run test && npm run lint:app-json",
+    "test:webkit:layout": "node scripts/test-webkit-layout.mjs"
   },
   "devDependencies": {
     "@evenrealities/evenhub-cli": "^0.1.13",
