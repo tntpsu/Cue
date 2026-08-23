@@ -10,7 +10,14 @@ export type ModeId = 'date' | 'argue-calm' | 'sales-close' | 'sting' | 'listen' 
 export interface Mode {
   id: ModeId
   label: string // user-facing display name
-  glyph: string // single-char visual indicator on glasses (verified-safe)
+  /** Single-char indicator drawn on the glasses.
+   *
+   *  MUST be a glyph the firmware font actually has. Measure with
+   *  `getTextWidth` from `@evenrealities/pretext`: supported symbols return
+   *  20, and anything returning 4 is the missing-glyph fallback and will draw
+   *  as a box. Verified safe: ★ ◇ ▶ ● ◆ ▣ ■ ◈ ▲ ◌ ◎ ○.
+   *  Verified BROKEN: ⚡ ◉ ◍ ✦ ♦. Checked by tests/glyphs.test.ts. */
+  glyph: string
   description: string // shown in phone settings
   systemPrompt: string // sent to the LLM
   proactiveSupported: boolean // if true, ring-tap on silence asks for fresh topics
@@ -52,7 +59,10 @@ export const MODES: Mode[] = [
   {
     id: 'sting',
     label: 'Sting',
-    glyph: '⚡',
+    // ▲ not ⚡: getTextWidth('⚡') is 4, the firmware font's "glyph missing"
+    // fallback width, so it rendered as a box on real glasses. See the
+    // verified-safe list in this file's header comment.
+    glyph: '▲',
     description: 'Sharp, witty comebacks. For low-stakes banter.',
     systemPrompt:
       'You are a quick-witted friend helping the wearer with banter. Suggest 2-3 sharp but friendly comebacks based on what was just said. Under 12 words each. No mean-spirited or genuinely hurtful options. Numbered list, no preamble.',

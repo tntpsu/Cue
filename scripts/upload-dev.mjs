@@ -179,16 +179,19 @@ async function main() {
     process.exit(7)
   }
 
-  // SELECTOR: "Add build" submit button at the bottom of the dialog.
-  // (NOT the "Upload a build" trigger on the page — that one is hidden
-  //  behind the open dialog now.)
+  // SELECTOR: dialog submit button. The portal calls it "Add build" or
+  // "Add and replace" depending on whether the version is fresh or
+  // overwriting an existing build (verified on 2026-04-29). Match either.
   try {
-    const addBtn = page.locator('[role="dialog"] button:has-text("Add build")').first()
+    const addBtn = page
+      .locator('[role="dialog"] button')
+      .filter({ hasText: /^(Add build|Add and replace)$/ })
+      .first()
     await addBtn.waitFor({ state: 'visible', timeout: 5_000 })
     await addBtn.click()
-    console.log('  Add build clicked.')
+    console.log('  Add build / replace clicked.')
   } catch (err) {
-    console.error('✗ Could not find/click "Add build" button.')
+    console.error('✗ Could not find/click "Add build" / "Add and replace" button.')
     await dumpFailure(page, 'add-build', err)
     await browser.close()
     process.exit(8)

@@ -78,17 +78,17 @@ async function main() {
         && !u.includes('/oauth')
         && !u.includes('/auth')
       if (!onHub) continue
-      // Sanity: page should have rendered SOMETHING after auth — wait for
-      // the project-list-ish DOM to appear before capture.
-      const looksLoggedIn = await page.evaluate(() => {
-        // Anything that wouldn't be on a login page: a "Logout" / "Sign out"
-        // affordance, an avatar, OR a card-shaped UI element.
-        const text = document.body.innerText.toLowerCase()
-        const hasUserSignal = text.includes('logout') || text.includes('sign out') || text.includes('upload')
-        const hasCardSignal = document.querySelectorAll('[class*="card" i], [class*="project" i], [class*="application" i]').length > 0
-        return hasUserSignal || hasCardSignal
+      // Detection: URL is on /hub (the post-login destination) AND no
+      // password input is present. Earlier heuristic tripped on the login
+      // page's UI panel classes ("card"), saving an empty STORAGE_STATE
+      // before the user could finish logging in. A "Logout" affordance was
+      // too strict — the portal hides it behind a profile menu.
+      const loggedIn = await page.evaluate(() => {
+        const urlOk = location.pathname.startsWith('/hub')
+        const hasPasswordField = document.querySelector('input[type="password"]') !== null
+        return urlOk && !hasPasswordField
       }).catch(() => false)
-      if (looksLoggedIn) break
+      if (loggedIn) break
       if (!polledOnce) {
         console.log(`  Polling… (last URL: ${u})`)
         polledOnce = true

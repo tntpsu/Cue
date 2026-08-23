@@ -384,7 +384,7 @@ const MODE_BULLET: Record<ModeId, string> = {
   date: '★',
   'argue-calm': '◇',
   'sales-close': '▶',
-  sting: '⚡',
+  sting: '▲',
   listen: '●',
   interview: '▣',
   custom: '◆',
@@ -429,7 +429,7 @@ function renderGlasses(): string {
       idleLines.push(autoPausedReason)
       idleLines.push('')
     }
-    idleLines.push(`${isRealMode ? '◉ live' : '◌ mock'} ready`)
+    idleLines.push(`${isRealMode ? '◎ live' : '◌ mock'} ready`)
     idleLines.push('[tap] start mic')
     idleLines.push('[2x] cycle mode')
     return idleLines.join('\n')
@@ -917,7 +917,7 @@ saveWorkerBtn.addEventListener('click', async () => {
     ? 'Saved. Real STT + LLM active on next mic session.'
     : 'Saved (URL + token incomplete — mock mode will run).'
   window.setTimeout(() => { workerStatus.textContent = '' }, 4000)
-  // Force an immediate glasses repaint so the ◉ live / ◌ mock indicator
+  // Force an immediate glasses repaint so the ◎ live / ◌ mock indicator
   // reflects the new state without waiting for the next user gesture.
   void paint()
 })
