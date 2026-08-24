@@ -22,7 +22,8 @@
     "test:worker": "cd worker-template && node scripts/test-worker.mjs",
     "test:webkit": "node scripts/test-webkit.mjs",
     "test:all": "npm run test && npm run lint:app-json",
-    "test:webkit:layout": "node scripts/test-webkit-layout.mjs"
+    "test:webkit:layout": "node scripts/test-webkit-layout.mjs",
+    "hub:session": "node scripts/grab-from-debug-chrome.mjs"
   },
   "devDependencies": {
     "@evenrealities/evenhub-cli": "^0.1.13",
