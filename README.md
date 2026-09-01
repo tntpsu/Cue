@@ -4,7 +4,7 @@
 
 A multi-mode conversation coach for Even Realities G2 smart glasses. Listens to the conversation, surfaces 2-3 suggested responses on the display in real time. Pick a mode (Date / Argue calm / Sales close / Sting / Listen well / Custom) to shape the suggestions. The app never speaks for you — it offers cues you say in your own voice.
 
-## Status: v0.4.3 (per-session transcript persistence — review past conversations on phone)
+## Status: v0.4.4 (correctness pass: glyphs that actually render, phone layout that cannot overflow, failures you can see)
 
 > **Distribution blocker:** the Even Hub network whitelist is a static list of exact origins fixed at pack time — no wildcards, no runtime hosts ([docs](https://hub.evenrealities.com/docs/build/networking)). The BYO-Worker flow below therefore only works for whoever packed the `.ehpk`; a second user's own Worker URL is blocked before the request leaves the WebView. Distributing Cue needs the Worker to become a fixed origin with **user-supplied API keys**. Tracked as the top item before any listing.
 
@@ -22,7 +22,8 @@ If you've deployed the personal Worker (see `worker-template/README.md`) and pas
 | v0.4.0 | Speaker diarization — Worker requests `diarize=true&utterances=true`; per-speaker turns parsed into the transcript; wearer's own lines excluded from the suggestion context. |
 | v0.4.1 | Phone-side speaker selector + `(you)` markers in the transcript view. |
 | v0.4.2 | "Calibrate me" — one tap anchors the next speaker heard as the wearer, persisted across reload. |
-| **v0.4.3** *(current)* | Per-session transcript persistence: one record per mic-on/mic-off pair (mode, other speakers' transcript, suggestion count), capped at 50 newest-first, reviewable and clearable in phone settings. |
+| v0.4.3 | Per-session transcript persistence: one record per mic-on/mic-off pair (mode, other speakers' transcript, suggestion count), capped at 50 newest-first, reviewable and clearable in phone settings. |
+| **v0.4.4** *(current)* | Correctness pass, no new features. Three glyphs were missing from the firmware font and drew as boxes: the battery indicator above 20% charge (so, nearly always), the Sting mode marker, and the `live` indicator that tells you a Worker is configured. Both rejection-class phone-layout bugs fixed (`overflow-x` on the wrapper, `max-width`/`box-sizing` on the speaker selector) and proved at 320/390/430px in WebKit. A failing session now says so on the glasses (`ERR rate limited`, `ERR key rejected`) instead of looking like silence. Mic permission text corrected to match what the app actually stores. 114 tests. |
 | v0.5.0 *(planned)* | User-supplied API keys so the app is distributable (see blocker above). Worker-side dedupe of repeated suggestions, retry/backoff on rate-limit. |
 
 ## How it works (current v0.2.0)
