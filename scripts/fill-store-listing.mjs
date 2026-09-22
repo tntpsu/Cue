@@ -307,27 +307,36 @@ async function fillDescription() {
   const desc = cfg.description.slice(0, 2000)
   await dlg().locator('textarea[name="description"]').fill(desc)
 
-  // Tags (optional)
+  // Tags (optional). Learned on Card Pack 2026-09-22: a COMMA commits a tag;
+  // Enter does nothing, and fill() replaces whatever was typed, so the old
+  // "fill + Enter" loop left exactly one tag (the last). The "N / 5" counter
+  // in the dialog is the only reliable readback; pills have no stable class.
+  // The input stays visible after pills exist (its placeholder just empties),
+  // so match it by placeholder first and fall back to the last visible input.
   if (cfg.tags && cfg.tags.length > 0) {
-    // Tags: only add if none exist yet. Tag pills are persistent across
-    // re-opens of the dialog and there's no reliable selector for the
-    // remove button. Each tag needs typing then Enter (not comma-split).
-    // The visible tag input is hidden once any pill is present.
-    const tagsContainer = dlg().locator('text=Tags').locator('..').locator('..')
-    const existingPills = await tagsContainer.locator('[class*="pill"], [class*="chip"], [class*="tag"]').count().catch(() => 0)
-    const tagsInput = tagsContainer.locator('input').first()
-    const inputVisible = await tagsInput.isVisible().catch(() => false)
-    if (existingPills > 0) {
-      console.log(`    (${existingPills} existing tag pills — skipping tag fill)`)
-    } else if (inputVisible) {
-      for (const tag of cfg.tags.slice(0, 5)) {
-        await tagsInput.click().catch(() => {})
-        await tagsInput.fill(tag.slice(0, 20))
-        await page.keyboard.press('Enter')
-        await page.waitForTimeout(200)
-      }
+    const tagCount = async () => {
+      const t = await dlg().innerText().catch(() => '')
+      const m = t.match(/Tags \(Optional\)\s*\n\s*(\d)\s*\/\s*5/)
+      return m ? Number(m[1]) : null
+    }
+    let count = await tagCount()
+    if (count === null) {
+      console.log('    (no tag counter found — skipping tags)')
+    } else if (count > 0) {
+      console.log(`    (${count} tag(s) already present — skipping tag fill)`)
     } else {
-      console.log('    (tag input not visible — skipping)')
+      let tagsInput = dlg().locator('input[placeholder*="tags separated"]').first()
+      if (await tagsInput.count() === 0) tagsInput = dlg().locator('input:visible').last()
+      for (const tag of cfg.tags.slice(0, 5)) {
+        await tagsInput.click()
+        await page.keyboard.type(tag.slice(0, 20), { delay: 15 })
+        await page.keyboard.type(',')
+        await page.waitForTimeout(400)
+        const now = await tagCount()
+        if (now !== count + 1) console.log(`    ⚠ tag "${tag}" did not register (counter ${count} → ${now})`)
+        count = now ?? count
+      }
+      console.log(`    tags: ${count} / 5`)
     }
   }
 
