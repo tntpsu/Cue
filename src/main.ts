@@ -28,10 +28,13 @@ import {
   setShowDebugOverlay,
   setStorageBridge,
   setWearerSpeakerId,
+  getDirectKeys,
+  setDirectKeys,
   setWorkerToken,
   setWorkerUrl,
 } from './storage'
-import { createTransport, setTransportLogger, type CueFetchLog, type CueTransport, type TranscriptEvent } from './transport'
+import { createBestTransport, setTransportLogger, type CueFetchLog, type CueTransport, type TranscriptEvent } from './transport'
+import { keyLooksValid } from './providers'
 import {
   appendTurn,
   batteryHeaderSuffix,
@@ -70,7 +73,14 @@ const MIC_TICK_MS = 1_000
 let idleAutoPauseMs = DEFAULT_IDLE_AUTO_PAUSE_MIN * 60_000
 
 let transport: CueTransport | null = null
-let isRealMode = false // true when transport.ready (Worker configured)
+let isRealMode = false // true when transport.ready (provider keys or Worker configured)
+// v0.5.0: provider keys from phone settings. Hydrated at bootstrap; the
+// transport is rebuilt from these + the Worker fields whenever either changes.
+let directKeys: { deepgramKey: string; llmProvider: 'anthropic' | 'openai'; llmKey: string } = { deepgramKey: '', llmProvider: 'anthropic', llmKey: '' }
+function rebuildTransport(workerUrl: string, bearerToken: string): void {
+  transport = createBestTransport({ keys: directKeys, workerUrl: workerUrl.trim(), bearerToken: bearerToken.trim() })
+  isRealMode = transport.ready
+}
 let liveTranscript = '' // accumulated final transcripts
 let lastSuggestionAt = 0
 let suggestionInFlight = false
@@ -195,8 +205,9 @@ root.innerHTML = `
         <h2 style="margin: 0 0 .5rem 0;">Before you start</h2>
         <p>
           Cue records audio from the glasses microphone to suggest responses.
-          Audio streams to a transcription service and is dropped — Cue never
-          stores recordings.
+          Audio streams to Deepgram for transcription (with your own API key, or
+          via your personal Worker) and is dropped — Cue never stores recordings.
+          Transcript text goes to the LLM you chose (Anthropic or OpenAI).
         </p>
         <p style="font-weight: 600;">
           You are responsible for ensuring this is legal where you are.
@@ -227,11 +238,34 @@ root.innerHTML = `
     </section>
 
     <section>
-      <h2 style="font-size: 1.1em; margin: 1.5rem 0 .5rem 0;">Worker (v0.2.0+)</h2>
+      <h2 style="font-size: 1.1em; margin: 1.5rem 0 .5rem 0;">Your API keys</h2>
       <p style="color: #7b7b7b; font-size: .9em; max-width: 520px;">
-        v0.1.0 uses MOCK suggestions on a timer — no API keys needed.
-        v0.2.0 onwards routes mic audio through your personal Cloudflare Worker
-        for real STT + LLM. Set those credentials here in advance.
+        Cue sends audio to Deepgram for transcription and the transcript to the
+        LLM you pick, using keys you paste here. Keys stay on this phone and go
+        only to those providers; you pay them for usage. Get keys at
+        console.deepgram.com and console.anthropic.com or platform.openai.com.
+        Without keys (or a Worker below), Cue runs in mock mode.
+      </p>
+      <div style="display: grid; gap: .25rem; max-width: 520px;">
+        <label>LLM provider
+          <select id="llm-provider" style="padding: .35rem; margin-left: .5rem; max-width: 100%; box-sizing: border-box;">
+            <option value="anthropic">Anthropic (Claude)</option>
+            <option value="openai">OpenAI</option>
+          </select>
+        </label>
+        <label>LLM API key <input id="llm-key" type="password" autocomplete="off" placeholder="sk-ant-... or sk-..." style="padding: .35rem; width: 100%; box-sizing: border-box; font-family: monospace;" /></label>
+        <label>Deepgram API key <input id="deepgram-key" type="password" autocomplete="off" placeholder="40-character key" style="padding: .35rem; width: 100%; box-sizing: border-box; font-family: monospace;" /></label>
+        <button id="save-keys" type="button" style="margin-top: .25rem; padding: .35rem .7rem; cursor: pointer; max-width: 200px;">Save keys</button>
+        <p id="keys-status" style="color: #2a2; font-size: .85em; min-height: 1.2em;"></p>
+      </div>
+    </section>
+
+    <section>
+      <h2 style="font-size: 1.1em; margin: 1.5rem 0 .5rem 0;">Advanced: personal Worker</h2>
+      <p style="color: #7b7b7b; font-size: .9em; max-width: 520px;">
+        Instead of pasting provider keys, you can route audio through your own
+        Cloudflare Worker that holds them (see worker-template/). Only used when
+        the keys above are not both set.
       </p>
       <div style="display: grid; gap: .25rem; max-width: 520px;">
         <label>Worker URL <input id="worker-url" type="url" placeholder="https://cue-worker.your-sub.workers.dev" style="padding: .35rem; width: 100%; box-sizing: border-box;" /></label>
@@ -296,7 +330,7 @@ root.innerHTML = `
       <details>
         <summary style="cursor: pointer; color: #232323;">Recent fetches (debug)</summary>
         <p style="color: #7b7b7b; margin: .5rem 0; font-size: .85em; max-width: 520px;">
-          Last 50 calls to your Worker (/transcribe + /suggest) with status, latency,
+          Last 50 transcription and suggestion calls (to the providers, or your Worker) with status, latency,
           and any error message. Use this to figure out why mic-on isn't producing
           transcripts — 405 = wrong/old worker URL, 401 = bearer mismatch,
           500 with "DEEPGRAM_API_KEY" = worker secret missing.
@@ -326,6 +360,11 @@ const modeList = document.querySelector<HTMLDivElement>('#mode-list')!
 const customPromptInput = document.querySelector<HTMLTextAreaElement>('#custom-prompt')!
 const saveCustomBtn = document.querySelector<HTMLButtonElement>('#save-custom')!
 const workerUrlInput = document.querySelector<HTMLInputElement>('#worker-url')!
+const llmProviderSelect = document.querySelector<HTMLSelectElement>('#llm-provider')!
+const llmKeyInput = document.querySelector<HTMLInputElement>('#llm-key')!
+const deepgramKeyInput = document.querySelector<HTMLInputElement>('#deepgram-key')!
+const saveKeysBtn = document.querySelector<HTMLButtonElement>('#save-keys')!
+const keysStatus = document.querySelector<HTMLParagraphElement>('#keys-status')!
 const workerTokenInput = document.querySelector<HTMLInputElement>('#worker-token')!
 const saveWorkerBtn = document.querySelector<HTMLButtonElement>('#save-worker')!
 const workerStatus = document.querySelector<HTMLParagraphElement>('#worker-status')!
@@ -967,15 +1006,36 @@ saveWorkerBtn.addEventListener('click', async () => {
   await setWorkerUrl(workerUrlInput.value)
   await setWorkerToken(workerTokenInput.value)
   // Re-initialize transport so the next mic session uses the new config.
-  transport = createTransport(workerUrlInput.value.trim(), workerTokenInput.value.trim())
-  isRealMode = transport.ready
+  rebuildTransport(workerUrlInput.value, workerTokenInput.value)
   workerStatus.style.color = '#2a2'
-  workerStatus.textContent = isRealMode
-    ? 'Saved. Real STT + LLM active on next mic session.'
-    : 'Saved (URL + token incomplete — mock mode will run).'
+  workerStatus.textContent = !isRealMode
+    ? 'Saved (URL + token incomplete — mock mode will run).'
+    : directKeys.deepgramKey && directKeys.llmKey
+      ? 'Saved. Your API keys above take precedence; the Worker is the fallback.'
+      : 'Saved. Real STT + LLM via your Worker on next mic session.'
   window.setTimeout(() => { workerStatus.textContent = '' }, 4000)
   // Force an immediate glasses repaint so the ◎ live / ◌ mock indicator
   // reflects the new state without waiting for the next user gesture.
+  void paint()
+})
+
+saveKeysBtn.addEventListener('click', async () => {
+  const provider = llmProviderSelect.value === 'openai' ? 'openai' as const : 'anthropic' as const
+  directKeys = { deepgramKey: deepgramKeyInput.value.trim(), llmProvider: provider, llmKey: llmKeyInput.value.trim() }
+  await setDirectKeys(directKeys)
+  rebuildTransport(workerUrlInput.value, workerTokenInput.value)
+  // Format hints only; the first real call is the actual validation.
+  const hints: string[] = []
+  if (directKeys.deepgramKey && !keyLooksValid('deepgram', directKeys.deepgramKey)) hints.push('Deepgram key does not look like a 40-character key')
+  if (directKeys.llmKey && !keyLooksValid(provider, directKeys.llmKey)) hints.push(`${provider === 'anthropic' ? 'Anthropic' : 'OpenAI'} key does not look like one`)
+  const complete = !!directKeys.deepgramKey && !!directKeys.llmKey
+  keysStatus.style.color = hints.length ? '#b60' : '#2a2'
+  keysStatus.textContent = !complete
+    ? 'Saved. Both keys are needed for live mode (Worker or mock will run).'
+    : hints.length
+      ? `Saved, but: ${hints.join('; ')}. Live mode will try anyway.`
+      : 'Saved. Live STT + LLM with your keys on next mic session.'
+  window.setTimeout(() => { keysStatus.textContent = '' }, 6000)
   void paint()
 })
 
@@ -1010,6 +1070,10 @@ async function bootstrap(): Promise<void> {
   const wTok = await getWorkerToken()
   workerUrlInput.value = wUrl
   workerTokenInput.value = wTok
+  directKeys = await getDirectKeys()
+  llmProviderSelect.value = directKeys.llmProvider
+  llmKeyInput.value = directKeys.llmKey
+  deepgramKeyInput.value = directKeys.deepgramKey
   const idleMin = await getIdleAutoPauseMin()
   idleAutoPauseInput.value = String(idleMin)
   idleAutoPauseMs = idleMin * 60_000
@@ -1021,8 +1085,7 @@ async function bootstrap(): Promise<void> {
   calibratingNow = await getCalibrating()
   // Set up transport if both Worker URL + token are configured. If they're
   // unset or change later, mock mode runs.
-  transport = createTransport(wUrl, wTok)
-  isRealMode = transport.ready
+  rebuildTransport(wUrl, wTok)
   renderModeList()
 
   if (!agreedToPrivacy) {

@@ -1,7 +1,7 @@
 {
   "name": "cue",
   "private": true,
-  "version": "0.4.4",
+  "version": "0.5.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "qr": "evenhub qr",
     "lint:app-json": "node scripts/lint-app-json.mjs",
-    "pack": "node scripts/lint-app-json.mjs && evenhub pack app.json dist -o cue.ehpk",
+    "pack": "node scripts/lint-app-json.mjs && evenhub pack app.json dist -o cue.ehpk --sdk-ver $(node -p \"require('./node_modules/@evenrealities/even_hub_sdk/package.json').version\")",
     "deploy": "npm run build && npm run pack && echo '\\ncue.ehpk ready: '$(pwd)'/cue.ehpk\\nRun npm run deploy:upload to push to the portal'",
     "deploy:upload": "node scripts/deploy-portal.mjs",
     "deploy:full": "npm run deploy && npm run deploy:upload",
@@ -23,10 +23,11 @@
     "test:webkit": "node scripts/test-webkit.mjs",
     "test:all": "npm run test && npm run lint:app-json",
     "test:webkit:layout": "node scripts/test-webkit-layout.mjs",
-    "hub:session": "node scripts/grab-from-debug-chrome.mjs"
+    "hub:session": "node scripts/grab-from-debug-chrome.mjs",
+    "test:backends": "vitest run tests/backends.live.test.ts"
   },
   "devDependencies": {
-    "@evenrealities/evenhub-cli": "^0.1.13",
+    "@evenrealities/evenhub-cli": "^0.1.14",
     "@evenrealities/evenhub-simulator": "^0.7.3",
     "@evenrealities/pretext": "^0.1.4",
     "jsdom": "^29.0.2",

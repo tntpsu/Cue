@@ -203,3 +203,21 @@ Caught when adding /diag + /healthz to Glance's worker — it had been
 deployed-ready in code since v0.1 but never actually deployed via
 wrangler. Now Glance's Default-Worker feature (v0.5.0) is finally
 ship-able end-to-end.
+
+## Bring-your-own keys, not bring-your-own Worker (Cue, 2026-09-24)
+
+The hub network whitelist is a fixed list of exact origins at pack time, so an
+app cannot let each user supply their own backend URL. It can let each user
+supply their own **keys** to a backend whose origin is the same for everyone.
+Cue v0.5.0 calls `api.deepgram.com`, `api.anthropic.com` and `api.openai.com`
+directly from the plugin with keys from phone settings.
+
+All three accept browser (CORS) requests from any origin; verified with
+preflight probes on 2026-09-22. Anthropic additionally requires the
+`anthropic-dangerous-direct-browser-access: true` header. The name is a
+warning that the key is client-side, which for a user's own key on their own
+phone is the intended model; it is disclosed in the permission text.
+
+`lib.dom`'s `BlobPart` no longer accepts a bare `Uint8Array` (its buffer may be
+a `SharedArrayBuffer` by type): hand `new Blob()` an `ArrayBuffer` slice
+(`providers.ts` `toArrayBuffer`).

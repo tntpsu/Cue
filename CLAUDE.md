@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**Cue** — a multi-mode conversation coach for Even Realities G2 smart glasses. Six built-in modes (Date / Argue calm / Sales close / Sting / Listen well / Custom) shape how the LLM phrases suggestions. Audio captured from the glasses mic is sent in 2.5s chunks to the user's personal Cloudflare Worker, which proxies to Deepgram for transcription + Anthropic/OpenAI for suggestions. Real STT + LLM lands as text + utterances back at the plugin; suggestions render on the glasses display in real time.
+**Cue** — a multi-mode conversation coach for Even Realities G2 smart glasses. Six built-in modes (Date / Argue calm / Sales close / Sting / Listen well / Custom) shape how the LLM phrases suggestions. Audio captured from the glasses mic is sent in 2.5s chunks either directly to Deepgram (transcription) and Anthropic/OpenAI (suggestions) with keys the user pastes in phone settings (v0.5.0, the distributable path), or to the user's personal Cloudflare Worker which holds those keys (advanced). Real STT + LLM lands as text + utterances back at the plugin; suggestions render on the glasses display in real time.
 
 One of four Even-glasses-app repos at `~/Documents/{Cue,Pulse,Glance,lyrics-glow}`. The other three are non-conversational; this is the only one that needs the audio + Worker pipeline.
 
@@ -26,7 +26,7 @@ npx evenhub qr --url http://<lan-ip>:5176   # QR for real-glasses hot reload
 
 Three layers talk to each other:
 
-1. **Plugin (this repo).** TypeScript + Vite SPA that runs in WKWebView in the Even Realities companion app on the phone. `src/main.ts` owns the state machine, `src/even.ts` wraps the glasses bridge, `src/transport.ts` handles audio chunking + HTTP POST to the Worker, `src/utterance.ts` holds pure heuristics (end-of-utterance trigger, sentence-aware trim, conversation accumulation, speaker labels), `src/modes.ts` is the mode registry.
+1. **Plugin (this repo).** TypeScript + Vite SPA that runs in WKWebView in the Even Realities companion app on the phone. `src/main.ts` owns the state machine, `src/even.ts` wraps the glasses bridge, `src/transport.ts` handles audio chunking over two backends (`src/providers.ts` direct-to-provider, or the Worker; keys win, then Worker, then mock), `src/utterance.ts` holds pure heuristics (end-of-utterance trigger, sentence-aware trim, conversation accumulation, speaker labels), `src/modes.ts` is the mode registry.
 
 2. **Worker (in `worker-template/`).** Personal Cloudflare Worker the user deploys with their own Deepgram + Anthropic/OpenAI keys. Endpoints: `POST /transcribe` (audio → JSON `{text, utterances}`), `POST /suggest` (transcript → JSON `{suggestions[]}`), `GET /healthz`, `GET /ws` (WebSocket — vestigial, see KNOWN_QUIRKS). Logs every request via `console.log` for `wrangler tail` debugging.
 

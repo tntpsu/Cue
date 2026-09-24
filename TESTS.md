@@ -1,6 +1,6 @@
-# TESTS — coverage matrix (Cue v0.3.0)
+# TESTS — coverage matrix (Cue v0.5.0)
 
-Last updated: 2026-05-05 (seeded from coverage-matrix skill).
+Last updated: 2026-09-24 (v0.5.0 bring-your-own keys).
 
 Full taxonomy + discipline: `~/.claude/skills/coverage-matrix/SKILL.md`. Empty cells block the next ship. `/ship-app` blocks if this file has unfilled cells.
 
@@ -16,6 +16,11 @@ Full taxonomy + discipline: `~/.claude/skills/coverage-matrix/SKILL.md`. Empty c
 | Audio capture → chunked POST | unit:transport TODO | n/a | manual:hw | manual:hw | manual:hw | manual |
 | Deepgram transcribe round-trip | manual:hw | manual:hw | manual:hw | manual:hw | n/a | manual |
 | Anthropic / OpenAI suggestion path | manual:hw | manual:hw | manual:hw | manual:hw | n/a | manual |
+| v0.5.0 direct Deepgram call: WAV wrap, Token auth, diarize params, utterance parsing | unit:providers:transcribe | unit:providers (401 → key rejected; thrown fetch → network) | unit:providers | n/a | n/a | n/a |
+| v0.5.0 direct LLM call: Anthropic browser header + version, OpenAI bearer, numbered-list parsing, prompt assembly (custom wins, do-not-repeat note) | unit:providers:suggest + unit:providers:prompt | unit:providers (429/402 explained) | unit:providers | n/a | n/a | n/a |
+| Backend precedence: complete keys > Worker > mock; half-configured keys never win | unit:providers:createBestTransport | unit:providers:createBestTransport | n/a | n/a | n/a | n/a |
+| Live auth against the real providers | `npm run test:backends` with keys in env (skipped otherwise) | manual | manual | n/a | n/a | n/a |
+| Provider origins are whitelisted | unit:providers:whitelist + lint-app-json gap check | n/a | n/a | n/a | n/a | n/a |
 | End-of-utterance trigger (silence + sentence-final) | unit:utterance | unit:utterance | n/a | n/a | n/a | n/a |
 | Diarization (`[A]`/`[B]` labels) | manual:hw | manual:hw | n/a | n/a | n/a | n/a |
 | Battery glyph in header updates | manual:hw | n/a | n/a | n/a | n/a | n/a |

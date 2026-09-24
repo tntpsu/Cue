@@ -51,6 +51,11 @@ const KEY_SHOW_DEBUG_OVERLAY = 'cue:show-debug-overlay:v1'
 // auto-detect (don't filter from suggestion context). 0/1/... = anchor
 // that speaker as wearer; suggestions exclude their lines.
 const KEY_WEARER_SPEAKER_ID = 'cue:wearer-speaker-id:v1'
+// v0.5.0: bring-your-own keys for the direct-to-provider path. Stored in the
+// same per-app bridge storage as the Worker secret: on the phone, nowhere else.
+const KEY_DEEPGRAM_KEY = 'cue:deepgram-key:v1'
+const KEY_LLM_PROVIDER = 'cue:llm-provider:v1'
+const KEY_LLM_KEY = 'cue:llm-key:v1'
 
 export const DEFAULT_IDLE_AUTO_PAUSE_MIN = 5
 export const DEFAULT_WEARER_SPEAKER_ID = -1
@@ -182,4 +187,28 @@ export async function appendSessionRecord(rec: SessionRecord): Promise<void> {
 
 export async function clearSessionHistory(): Promise<void> {
   await writeRaw(KEY_SESSION_HISTORY, JSON.stringify([]))
+}
+
+export type StoredLlmProvider = 'anthropic' | 'openai'
+export const DEFAULT_LLM_PROVIDER: StoredLlmProvider = 'anthropic'
+
+export interface StoredDirectKeys {
+  deepgramKey: string
+  llmProvider: StoredLlmProvider
+  llmKey: string
+}
+
+export async function getDirectKeys(): Promise<StoredDirectKeys> {
+  const provider = await readRaw(KEY_LLM_PROVIDER)
+  return {
+    deepgramKey: (await readRaw(KEY_DEEPGRAM_KEY)) ?? '',
+    llmProvider: provider === 'openai' ? 'openai' : DEFAULT_LLM_PROVIDER,
+    llmKey: (await readRaw(KEY_LLM_KEY)) ?? '',
+  }
+}
+
+export async function setDirectKeys(keys: StoredDirectKeys): Promise<void> {
+  await writeRaw(KEY_DEEPGRAM_KEY, keys.deepgramKey.trim())
+  await writeRaw(KEY_LLM_PROVIDER, keys.llmProvider)
+  await writeRaw(KEY_LLM_KEY, keys.llmKey.trim())
 }

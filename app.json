@@ -2,19 +2,22 @@
   "package_id": "com.philtullai.cue",
   "edition": "202601",
   "name": "Cue",
-  "version": "0.4.4",
-  "min_app_version": "2.0.0",
+  "version": "0.5.0",
+  "min_app_version": "2.2.5",
   "min_sdk_version": "0.0.10",
   "entrypoint": "index.html",
   "permissions": [
     {
       "name": "g2-microphone",
-      "desc": "Captures nearby conversation to suggest replies on the glasses. Audio streams to your personal Worker for transcription and is never stored. Transcribed text IS saved on your phone (last 50 sessions, other speakers only), clearable in settings. Mic is OFF by default, per-session opt-in."
+      "desc": "Captures nearby conversation to suggest replies on the glasses. Audio streams to Deepgram for transcription (your own API key, or your personal Worker) and is never stored. Transcribed text IS saved on your phone (last 50 sessions, other speakers only), clearable in settings. Mic is OFF by default."
     },
     {
       "name": "network",
-      "desc": "Sends audio + transcript context to the personal Cloudflare Worker (which proxies to Deepgram and OpenAI). Worker URL is configured in phone-side settings; the host below is the deployed cue-worker that the .ehpk is allowed to talk to.",
+      "desc": "Sends audio to Deepgram and transcript context to Anthropic or OpenAI using API keys you paste in phone settings; keys stay on your phone. Optionally routes through your own Cloudflare Worker instead. No other hosts.",
       "whitelist": [
+        "https://api.deepgram.com",
+        "https://api.anthropic.com",
+        "https://api.openai.com",
         "https://cue-worker.tullaipsu.workers.dev"
       ]
     }

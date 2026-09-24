@@ -4,9 +4,9 @@
 
 A multi-mode conversation coach for Even Realities G2 smart glasses. Listens to the conversation, surfaces 2-3 suggested responses on the display in real time. Pick a mode (Date / Argue calm / Sales close / Sting / Listen well / Custom) to shape the suggestions. The app never speaks for you — it offers cues you say in your own voice.
 
-## Status: v0.4.4 (correctness pass: glyphs that actually render, phone layout that cannot overflow, failures you can see)
+## Status: v0.5.0 (bring your own keys: distributable without a Worker)
 
-> **Distribution blocker:** the Even Hub network whitelist is a static list of exact origins fixed at pack time — no wildcards, no runtime hosts ([docs](https://hub.evenrealities.com/docs/build/networking)). The BYO-Worker flow below therefore only works for whoever packed the `.ehpk`; a second user's own Worker URL is blocked before the request leaves the WebView. Distributing Cue needs the Worker to become a fixed origin with **user-supplied API keys**. Tracked as the top item before any listing.
+> **Distribution (resolved in v0.5.0):** the Even Hub network whitelist is a static list of exact origins fixed at pack time ([docs](https://hub.evenrealities.com/docs/build/networking)), so each user cannot point Cue at their own Worker. Cue now talks to `api.deepgram.com` and `api.anthropic.com` / `api.openai.com` directly with keys the user pastes in phone settings; those three origins are the same for every install, so they are whitelisted once. The personal Worker remains as an advanced option.
 
 If you've deployed the personal Worker (see `worker-template/README.md`) and pasted its URL + bearer token in phone settings, Cue streams audio over chunked HTTP → Deepgram for transcription, and POSTs your rolling transcript to the Worker's `/suggest` endpoint for LLM suggestions. If those settings are blank or the Worker is unreachable, Cue falls back to the v0.1.0 timer-driven mock suggestions so the app stays demonstrable.
 
@@ -23,13 +23,14 @@ If you've deployed the personal Worker (see `worker-template/README.md`) and pas
 | v0.4.1 | Phone-side speaker selector + `(you)` markers in the transcript view. |
 | v0.4.2 | "Calibrate me" — one tap anchors the next speaker heard as the wearer, persisted across reload. |
 | v0.4.3 | Per-session transcript persistence: one record per mic-on/mic-off pair (mode, other speakers' transcript, suggestion count), capped at 50 newest-first, reviewable and clearable in phone settings. |
-| **v0.4.4** *(current)* | Correctness pass, no new features. Three glyphs were missing from the firmware font and drew as boxes: the battery indicator above 20% charge (so, nearly always), the Sting mode marker, and the `live` indicator that tells you a Worker is configured. Both rejection-class phone-layout bugs fixed (`overflow-x` on the wrapper, `max-width`/`box-sizing` on the speaker selector) and proved at 320/390/430px in WebKit. A failing session now says so on the glasses (`ERR rate limited`, `ERR key rejected`) instead of looking like silence. Mic permission text corrected to match what the app actually stores. 114 tests. |
-| v0.5.0 *(planned)* | User-supplied API keys so the app is distributable (see blocker above). Worker-side dedupe of repeated suggestions, retry/backoff on rate-limit. |
+| v0.4.4 | Correctness pass, no new features. Three glyphs were missing from the firmware font and drew as boxes: the battery indicator above 20% charge (so, nearly always), the Sting mode marker, and the `live` indicator that tells you a Worker is configured. Both rejection-class phone-layout bugs fixed (`overflow-x` on the wrapper, `max-width`/`box-sizing` on the speaker selector) and proved at 320/390/430px in WebKit. A failing session now says so on the glasses (`ERR rate limited`, `ERR key rejected`) instead of looking like silence. Mic permission text corrected to match what the app actually stores. 114 tests. |
+| **v0.5.0** *(current)* | Bring your own keys. A "Your API keys" section in phone settings (LLM provider + key, Deepgram key) makes Cue call the providers directly from the plugin; keys live in the app's on-device storage and go only to those providers. `src/providers.ts` ports the Worker's WAV wrap, Deepgram batch call, prompt assembly and Anthropic/OpenAI calls; `transport.ts` runs either backend behind one chunking pipeline (keys win, then Worker, then mock). Whitelist carries the three provider origins. Packed with CLI 0.1.14 (`--sdk-ver` pinned to the installed SDK). |
+| v0.6.0 *(planned)* | SDK 0.0.14 + `speakerRole` auto-anchoring: the glasses tag each audio frame self/other, so "which speaker is you" resolves itself; Calibrate me stays as the fallback. Moves the floor to Even App 2.2.9. |
 
 ## How it works (current v0.2.0)
 
-1. **One-time** — deploy the personal Cloudflare Worker (see [`worker-template/README.md`](worker-template/README.md)). You get a `https://<sub>.workers.dev` URL and a `SHARED_SECRET` bearer.
-2. **Wire it to Cue** — paste both into phone-side settings. (Skip this step and Cue runs in mock mode.)
+1. **One-time** — get a Deepgram API key (console.deepgram.com) and an Anthropic or OpenAI key, and paste them into the "Your API keys" section of phone-side settings. You pay those providers for usage. (Advanced alternative: deploy the personal Cloudflare Worker in [`worker-template/README.md`](worker-template/README.md) and paste its URL + bearer instead.)
+2. **Or skip it** — with neither keys nor a Worker, Cue runs in mock mode.
 3. Open Cue from the Even Hub launcher.
 4. **Privacy notice** appears on first launch — read and accept (or decline) before the mic can be enabled.
 5. Pick a mode in the phone-side settings page.
