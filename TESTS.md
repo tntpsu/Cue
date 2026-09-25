@@ -21,6 +21,7 @@ Full taxonomy + discipline: `~/.claude/skills/coverage-matrix/SKILL.md`. Empty c
 | Backend precedence: complete keys > Worker > mock; half-configured keys never win | unit:providers:createBestTransport | unit:providers:createBestTransport | n/a | n/a | n/a | n/a |
 | Live auth against the real providers | `npm run test:backends` with keys in env (skipped otherwise) | manual | manual | n/a | n/a | n/a |
 | Provider origins are whitelisted | unit:providers:whitelist + lint-app-json gap check | n/a | n/a | n/a | n/a | n/a |
+| Store listing matches the build: every mode named, providers + mic + AI disclosed, Even App floor stated, field limits, every cited screenshot exists at 576×288 (`scripts/capture-store-shots.mjs` shoots one live session per mode) | unit:store-listing:5 | unit:store-listing (fails on drift) | n/a | n/a | n/a | n/a |
 | End-of-utterance trigger (silence + sentence-final) | unit:utterance | unit:utterance | n/a | n/a | n/a | n/a |
 | Diarization (`[A]`/`[B]` labels) | manual:hw | manual:hw | n/a | n/a | n/a | n/a |
 | Battery glyph in header updates | manual:hw | n/a | n/a | n/a | n/a | n/a |

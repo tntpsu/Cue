@@ -1,0 +1,43 @@
+{
+  "name": "Cue",
+  "tagline": "Helps you say the right thing.",
+  "category": "AI",
+  "description": "Cue listens to the conversation you are in and puts two or three things you could say next on your glasses, in real time. Nothing to look down at, nothing to type.\n\nPick a mode for the moment: Date (curious, warm follow-ups), Argue calm (validating, de-escalating responses for tense conversations), Sales close (objection handling), Sting (sharp, friendly comebacks), Listen well (reflective listening prompts), Interview (crisp, structured answers), or Custom (your own system prompt).\n\nHow it works: the glasses microphone streams audio to Deepgram for transcription, and the transcript goes to the LLM you choose (Anthropic or OpenAI) for suggestions. Speakers are told apart, and your own lines are shown but kept out of the suggestions, so Cue suggests replies to the other person rather than echoing you. A one-tap Calibrate me anchors your voice.\n\nBring your own keys: paste a Deepgram key and an Anthropic or OpenAI key in the phone settings. They stay on your phone and go only to those providers; you pay them for usage. Without keys, Cue runs a mock session so you can see how it behaves.\n\nGestures: tap to start or stop the mic, double-tap while idle to cycle modes, ring double-tap in a session for fresh topics. The mic is off by default and opt-in per session. Audio is never stored; transcripts of the last 50 sessions (other speakers only) are kept on your phone and can be cleared in settings. Recording people without consent is illegal in some places; that responsibility is yours.\n\nRequires the Even app 2.2.5 or newer.",
+  "tags": [
+    "conversation",
+    "coach",
+    "ai",
+    "dating",
+    "interview"
+  ],
+  "icon_text": "CUE",
+  "screenshots": [
+    "store-assets/01-date.png",
+    "store-assets/02-argue-calm.png",
+    "store-assets/03-sales-close.png",
+    "store-assets/04-sting.png",
+    "store-assets/05-listen.png"
+  ],
+  "cover_screenshot_index": 0,
+  "cover_environment": "Cafe",
+  "permissions": {
+    "microphone": true,
+    "location": false,
+    "push_notifications": false,
+    "local_network": false,
+    "bluetooth": false,
+    "background_services": false,
+    "other": []
+  },
+  "data_collection": {
+    "location_tracked": false,
+    "ai_used": true,
+    "other": [
+      "Transcripts of the last 50 sessions (other speakers only) stored on the phone, clearable in settings"
+    ]
+  },
+  "third_party_services": [
+    "Deepgram (speech-to-text, with the user's own API key)",
+    "Anthropic or OpenAI (suggestions, with the user's own API key)"
+  ]
+}
