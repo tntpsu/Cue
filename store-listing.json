@@ -33,11 +33,11 @@
     "location_tracked": false,
     "ai_used": true,
     "other": [
-      "Transcripts of the last 50 sessions (other speakers only) stored on the phone, clearable in settings"
+      "Transcripts (other speakers) kept on the phone"
     ]
   },
   "third_party_services": [
-    "Deepgram (speech-to-text, with the user's own API key)",
-    "Anthropic or OpenAI (suggestions, with the user's own API key)"
+    "Deepgram (speech-to-text, user's own API key)",
+    "Anthropic or OpenAI (LLM, user's own API key)"
   ]
 }

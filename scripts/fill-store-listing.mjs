@@ -325,9 +325,11 @@ async function fillDescription() {
     } else if (count > 0) {
       console.log(`    (${count} tag(s) already present — skipping tag fill)`)
     } else {
-      let tagsInput = dlg().locator('input[placeholder*="tags separated"]').first()
-      if (await tagsInput.count() === 0) tagsInput = dlg().locator('input:visible').last()
+      // The placeholder disappears after the first pill, so a placeholder
+      // locator finds nothing from the second tag on (Cue, 2026-09-25). The tag
+      // input is the last visible input in the dialog; re-resolve it per tag.
       for (const tag of cfg.tags.slice(0, 5)) {
+        const tagsInput = dlg().locator('input:visible').last()
         await tagsInput.click()
         await page.keyboard.type(tag.slice(0, 20), { delay: 15 })
         await page.keyboard.type(',')
@@ -356,7 +358,9 @@ async function fillPrivacy() {
   console.log('  privacy/terms wizard…')
   // Skip if PDF already exists — privacy is already filled, no need to redo.
   const hasPdf = await page.locator('text=Privacy Policy and Terms & Conditions.pdf').count() > 0
-  if (hasPdf) {
+  // An explicit --only=privacy means "regenerate", even if a PDF exists.
+  const forced = process.argv.slice(3).some(a => /^--only=.*\bprivacy\b/.test(a))
+  if (hasPdf && !forced) {
     console.log('    (PDF already generated — skipping)')
     return
   }
@@ -415,11 +419,16 @@ async function fillPrivacy() {
   if (tps.length > 0) {
     const inputs = dlg().locator('input[placeholder*="third-party"]')
     for (let i = 0; i < tps.length; i++) {
-      const exists = await inputs.nth(i).count() > 0
-      if (!exists) {
-        // Click '+' to add another row
-        await dlg().locator('button[aria-label*="add" i], button:has-text("+")').first().click().catch(() => {})
-        await page.waitForTimeout(300)
+      if (await inputs.count() <= i) {
+        // The "+" is an icon-only button: no text, no aria-label. It is the one
+        // button in the dialog with no text content. Clicking it adds an empty
+        // row with the same placeholder (Cue, 2026-09-25); the old text/aria
+        // locator matched nothing and the swallowed error left the second
+        // entry unfilled.
+        await dlg().locator('button').filter({ hasNotText: /./ }).first().click()
+        const t0 = Date.now()
+        while ((await inputs.count()) <= i && Date.now() - t0 < 3000) await page.waitForTimeout(100)
+        if ((await inputs.count()) <= i) throw new Error(`third-party row ${i + 1} did not appear after "+"`)
       }
       await inputs.nth(i).fill(tps[i].slice(0, 50))
     }
@@ -514,11 +523,17 @@ async function selectBuild() {
 
 try {
   await closeDialogIfOpen()
-  await fillBasicInfo()
-  await fillScreenshots()
-  await fillDescription()
-  await fillPrivacy()
-  await selectBuild()
+  // --only=basic,screenshots,description,privacy,build  re-runs a subset after
+  // an interrupted run; a full re-run would re-upload the screenshots and
+  // redraw the icon for nothing.
+  const onlyArg = process.argv.slice(3).find(a => a.startsWith('--only='))
+  const only = onlyArg ? new Set(onlyArg.slice('--only='.length).split(',').map(s => s.trim()).filter(Boolean)) : null
+  const wants = (name) => !only || only.has(name)
+  if (wants('basic')) await fillBasicInfo()
+  if (wants('screenshots')) await fillScreenshots()
+  if (wants('description')) await fillDescription()
+  if (wants('privacy')) await fillPrivacy()
+  if (wants('build')) await selectBuild()
 } catch (err) {
   console.error('\n✗ failed:', err.message)
   await page.screenshot({ path: '/tmp/fill-store-listing-failure.png' }).catch(() => {})

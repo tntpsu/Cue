@@ -48,6 +48,9 @@ describe('store-listing.json matches the build', () => {
     expect(CATEGORIES).toContain(listing.category)
     expect(listing.description).not.toMatch(/\*\*|^- /m)
     expect(listing.icon_text.length).toBeLessThanOrEqual(3)
+    // The privacy wizard's free-text rows are cut at 50 by the driver; a
+    // longer entry ships truncated mid-word into the generated PDF.
+    for (const e of [...listing.third_party_services, ...listing.data_collection.other]) expect(e.length, e).toBeLessThanOrEqual(50)
   })
 
   it('cites screenshots that exist and are exactly 576x288', () => {
