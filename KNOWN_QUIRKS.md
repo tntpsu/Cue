@@ -114,6 +114,10 @@ If two sim windows are running with `--automation-port 9899`, only the first res
 
 **Fix:** always `pkill -f evenhub-simulator && sleep 2` before relaunching the sim. Don't open a second sim window thinking the first crashed — the API is lying to you.
 
+### Simulator 0.9.x menu clicks look like app-lifecycle events
+
+Opening the contextual menu with `context_menu` delivers `sysEvent 4` (`FOREGROUND_ENTER_EVENT`); picking an item with `click` delivers `menuItemClickEvent` followed by `sysEvent 5` (`FOREGROUND_EXIT_EVENT`) and the simulator closes its panel. An app whose foreground handler refreshes everything therefore refreshes on every menu open. A `double_click` sent within a few hundred ms of the menu click is swallowed; Pulse's harness waits ~900 ms after the click before the next input (verified 2026-11-03, simulator 0.9.5). Whether real firmware emits the same lifecycle pair around the menu is unverified.
+
 ### The simulator runs desktop Chromium, NOT iOS WKWebView
 
 Simulator passing != production passing. Specifically:
