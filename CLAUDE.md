@@ -15,10 +15,11 @@ npm run dev                   # Vite on :5176 (host 0.0.0.0 for LAN)
 npm run build                 # tsc + vite build → dist/
 npm run pack                  # lint-app-json + evenhub pack → cue.ehpk
 npm run deploy                # build + pack
-npm test                      # vitest (76 tests)
-npm run test:e2e              # simulator regression
+npm test                      # vitest (146 tests)
+npm run sim                   # simulator on :9897 (launched by path; npx evenhub-simulator 404s)
+npm run test:e2e              # simulator regression, needs dev + sim running
 npm run test:webkit           # Playwright/WebKit harness for iOS-WKWebView parity
-npm run hub:upload            # node scripts/upload-dev.mjs (uploads ./cue.ehpk to dev portal)
+npx evenhub upload cue.ehpk -m "<changelog>"   # CLI 0.2.0; one-time `evenhub login` from a real Terminal
 npx evenhub qr --url http://<lan-ip>:5176   # QR for real-glasses hot reload
 ```
 
@@ -30,7 +31,7 @@ Three layers talk to each other:
 
 2. **Worker (in `worker-template/`).** Personal Cloudflare Worker the user deploys with their own Deepgram + Anthropic/OpenAI keys. Endpoints: `POST /transcribe` (audio → JSON `{text, utterances}`), `POST /suggest` (transcript → JSON `{suggestions[]}`), `GET /healthz`, `GET /ws` (WebSocket — vestigial, see KNOWN_QUIRKS). Logs every request via `console.log` for `wrangler tail` debugging.
 
-3. **Glasses runtime.** Single full-screen text container. `textContainerUpgrade` for flicker-free updates. Audio capture via `audioControl(true)`; PCM frames arrive via `onEvenHubEvent.audioEvent.audioPcm`.
+3. **Glasses runtime.** Single full-screen text container. `textContainerUpgrade` for flicker-free updates. Audio capture via `audioControl(true, AudioInputSource.Glasses)` with a phone-mic fallback; PCM frames arrive via `onEvenHubEvent.audioEvent.audioPcm` tagged with `speakerRole`, gated in `src/audio-role.ts`.
 
 ## Critical quirks (also see KNOWN_QUIRKS.md)
 
@@ -38,6 +39,7 @@ Three layers talk to each other:
 - **`bridge.audioControl(true)` returns truthy regardless of mic permission** — count audio frames as the real signal, not the call's return value.
 - **Concurrent `textContainerUpgrade` calls crash the BLE link** — render is serialized through `enqueue()` in `src/even.ts`. Don't bypass.
 - **The wearer's voice gets transcribed too.** v0.4.0 added Deepgram diarization (`diarize=true&utterances=true`) so the plugin can label speakers `[A]/[B]/etc` and exclude the wearer's lines from the suggestion-prompt context. Configure via phone-side "Which speaker is you?" dropdown.
+- **`speakerRole` is the Even app's guess, not a firmware fact.** v0.6.0 drops `self` frames only behind the default-off "Skip my own voice" setting, and the diagnostic overlay prints `self/other/unk/dropped` counts so the heuristic can be judged before the default changes. Never make the gate unconditional.
 - **`endMicSession` previously dropped the trailing audio chunk** — fixed in v0.4.1 by passing `force=true` to the final `flush()`. If you refactor `flush()`, keep the force-flag escape hatch.
 
 ## Conventions
@@ -58,7 +60,7 @@ Auth is in `~/.wrangler/state/` (already authenticated; reuse).
 
 ## Dev-portal upload
 
-`scripts/upload-dev.mjs` does Playwright-driven upload to `hub.evenrealities.com/hub/<package_id>`. Session cached at `~/.hub-portal-session.json` (shared across all four repos by design — sandbox blocks cross-repo cred propagation).
+`npx evenhub upload cue.ehpk -m "<changelog>"` (CLI 0.2.0) creates a Private build; `npx evenhub promote <version> --to beta` hands it to beta testers. Attaching the build to the store listing and public publishing stay in the portal. `scripts/upload-dev.mjs` (Playwright, session at `~/.hub-portal-session.json`) is the pre-0.2.0 fallback.
 
 ## Sister repos
 

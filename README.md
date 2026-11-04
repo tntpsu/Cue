@@ -4,7 +4,9 @@
 
 A multi-mode conversation coach for Even Realities G2 smart glasses. Listens to the conversation, surfaces 2-3 suggested responses on the display in real time. Pick a mode (Date / Argue calm / Sales close / Sting / Listen well / Custom) to shape the suggestions. The app never speaks for you — it offers cues you say in your own voice.
 
-## Status: v0.5.0 (bring your own keys: distributable without a Worker)
+## Status: v0.6.0 (SDK 0.0.16: speaker-role gate, phone-mic fallback)
+
+> **v0.6.0 (2026-11-03):** SDK 0.0.10 → **0.0.16**, simulator 0.9.5, CLI 0.2.0; the install floor is now Even app 2.2.10. The glasses mic opens via `AudioInputSource.Glasses` and falls back to the phone mic if the glasses refuse. Each audio frame's `speakerRole` tag is counted on the diagnostic overlay, and a new default-off setting ("Skip my own voice at the glasses") drops frames tagged as you before transcription. It stays off until the overlay shows the tag is trustworthy; the Deepgram speaker picker remains the fallback. `tests/sdk-floor.test.ts` refuses a pin below 0.0.16. 146 unit + 5 e2e green.
 
 > **Distribution (resolved in v0.5.0):** the Even Hub network whitelist is a static list of exact origins fixed at pack time ([docs](https://hub.evenrealities.com/docs/build/networking)), so each user cannot point Cue at their own Worker. Cue now talks to `api.deepgram.com` and `api.anthropic.com` / `api.openai.com` directly with keys the user pastes in phone settings; those three origins are the same for every install, so they are whitelisted once. The personal Worker remains as an advanced option.
 
@@ -79,6 +81,8 @@ npm run pack         # evenhub pack → cue.ehpk
 npm run deploy       # build + pack
 npm test             # Vitest unit tests
 npm run test:watch   # Vitest watch mode
+npm run sim          # simulator on :9897 against the dev server
+npm run test:e2e     # simulator regression (needs dev + sim running)
 ```
 
 Test on real glasses via QR:
@@ -86,9 +90,14 @@ Test on real glasses via QR:
 npx evenhub qr --url http://<your-mac-lan-ip>:5176
 ```
 
-Test in simulator:
+Test in simulator (the package is scoped and ships no `.bin`, so `npx evenhub-simulator` 404s; `npm run sim` launches it by path):
 ```bash
-npx evenhub-simulator --glow http://localhost:5176
+npm run dev & npm run sim
+```
+
+Upload a packed build (CLI 0.2.0, after a one-time `npx evenhub login` from a real Terminal):
+```bash
+npx evenhub upload cue.ehpk -m "<changelog>"
 ```
 
 ## Source files
@@ -96,15 +105,16 @@ npx evenhub-simulator --glow http://localhost:5176
 | File | Purpose |
 |---|---|
 | `src/main.ts` | Entry, state machine, phone settings UI, glasses render |
-| `src/even.ts` | Glasses bridge wrapper (text container, input routing, mic capture, battery) |
+| `src/even.ts` | Glasses bridge wrapper (text container, input routing, mic capture with glasses → phone fallback, speaker-role gate, battery) |
+| `src/audio-role.ts` | Pure speaker-role mapping, delivery rule and per-session frame tally |
 | `src/transport.ts` | Worker transport — chunked HTTP POST for audio + REST for suggestions |
 | `src/modes.ts` | Mode registry — id, label, glyph, system prompt, behavior flags |
 | `src/utterance.ts` | Pure heuristics — end-of-utterance trigger, sentence-aware trim, word wrap, battery glyph |
 | `src/mock.ts` | Mock-mode timer-driven canned suggestions (fallback when Worker unset) |
 | `src/storage.ts` | Native `setLocalStorage` wrapper for mode + privacy + Worker config |
 | `worker-template/` | Cloudflare Worker source — Deepgram + `/suggest` LLM bridge |
-| `tests/*.test.ts` | Vitest unit tests (54 passing) |
-| `scripts/regression.mjs` | Simulator-driven e2e flow check (mock-fallback path, 4/4) |
+| `tests/*.test.ts` | Vitest unit tests (146 passing) |
+| `scripts/regression.mjs` | Simulator-driven e2e flow check (mock-fallback path, 5/5) |
 
 ## Roadmap
 

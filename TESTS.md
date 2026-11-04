@@ -1,6 +1,6 @@
-# TESTS — coverage matrix (Cue v0.5.0)
+# TESTS — coverage matrix (Cue v0.6.0)
 
-Last updated: 2026-09-24 (v0.5.0 bring-your-own keys).
+Last updated: 2026-11-03 (v0.6.0 SDK 0.0.16: speaker-role gate, phone-mic fallback, SDK floor guard).
 
 Full taxonomy + discipline: `~/.claude/skills/coverage-matrix/SKILL.md`. Empty cells block the next ship. `/ship-app` blocks if this file has unfilled cells.
 
@@ -24,6 +24,10 @@ Full taxonomy + discipline: `~/.claude/skills/coverage-matrix/SKILL.md`. Empty c
 | Store listing matches the build: every mode named, providers + mic + AI disclosed, Even App floor stated, field limits, every cited screenshot exists at 576×288 (`scripts/capture-store-shots.mjs` shoots one live session per mode) | unit:store-listing:5 | unit:store-listing (fails on drift) | n/a | n/a | n/a | n/a |
 | End-of-utterance trigger (silence + sentence-final) | unit:utterance | unit:utterance | n/a | n/a | n/a | n/a |
 | Diarization (`[A]`/`[B]` labels) | manual:hw | manual:hw | n/a | n/a | n/a | n/a |
+| v0.6.0 speaker-role gate: `self` frames dropped only when the setting is on; `other`, `unknown` and untagged frames always delivered; tally resets per session | unit:even.audio (fake bridge) + unit:audio-role (literals pinned to the SDK enum) | unit:audio-role (garbage role → unknown) | n/a | n/a | n/a | unit:even.audio (stopMic clears source) |
+| v0.6.0 mic source: glasses first, phone when the glasses return false or throw, failure when both refuse (no frames delivered) | unit:even.audio | n/a | n/a | n/a | unit:even.audio (both refuse) | n/a |
+| Whether the Even app's `speakerRole` tag is right often enough to turn the gate on by default | manual:hw (diagnostic overlay `self/other/unk` counts over a real two-person session) | manual:hw | n/a | n/a | n/a | n/a |
+| SDK floor: pin ≥ 0.0.16, installed = pin, `app.json` `min_sdk_version` = installed (0.0.14 / 0.0.15 re-fire timers, see KNOWN_QUIRKS) | unit:sdk-floor | unit:sdk-floor | n/a | n/a | n/a | n/a |
 | Battery glyph in header updates | manual:hw | n/a | n/a | n/a | n/a | n/a |
 | Idle auto-pause after 5 min | manual:hw | n/a | n/a | n/a | n/a | n/a |
 | Render loop emits state logs while mic on | e2e:5 | n/a | n/a | n/a | n/a | n/a |
@@ -36,9 +40,9 @@ Full taxonomy + discipline: `~/.claude/skills/coverage-matrix/SKILL.md`. Empty c
 ## By dimension (status)
 
 - **Static:** lint+tsc ✓, app-json validation ✓, network whitelist matches code TODO, secret scan TODO
-- **Unit:** 76 tests across `src/` modules — see `npm test`
+- **Unit:** 146 tests across `src/` modules — see `npm test`
 - **Integration (JSDOM):** transport/utterance flows partial; storage round-trip TODO
-- **E2E:** `scripts/regression.mjs` — privacy gate + mode cycle + mock suggestions + render-loop liveness
+- **E2E:** `scripts/regression.mjs` — privacy gate + mode cycle + mock suggestions + render-loop liveness (5 checks; `npm run sim` on simulator 0.9.5)
 - **Worker integration:** `scripts/worker-test.mjs` (offline) covers Deepgram/Anthropic round-trip without burning credits per run
 - **WebKit parity:** `scripts/test-webkit.mjs` — Playwright run against iOS-WKWebView-shaped browser
 - **Hardware:** field-test log TODO (could live in PREMORTEM equivalent)

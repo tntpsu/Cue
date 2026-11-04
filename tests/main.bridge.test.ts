@@ -27,6 +27,8 @@ interface FakeRuntime {
   getStorage: (k: string) => Promise<string>
   setStorage: (k: string, v: string) => Promise<boolean>
   getBatteryLevel: () => Promise<number | undefined>
+  getMicSource: () => 'glasses' | 'phone' | null
+  getAudioStats: () => { frames: number; self: number; other: number; unknown: number; dropped: number }
 }
 
 interface FakeBridge {
@@ -63,6 +65,8 @@ function createFakeBridge(initialBattery: number | undefined = 80): FakeBridge {
     getStorage: async k => storage[k] ?? '',
     setStorage: async (k, v) => { storage[k] = v; return true },
     getBatteryLevel: async () => battery,
+    getMicSource: () => (mic ? 'glasses' : null),
+    getAudioStats: () => ({ frames: 0, self: 0, other: 0, unknown: 0, dropped: 0 }),
   }
   return {
     runtime,

@@ -34,12 +34,12 @@ await fetch(url, { method: 'POST', body, ... })
 
 ### `indexedDB.open()` silently doesn't persist in EvenHub WebView
 
-Tried IndexedDB as the storage layer for Hands Free v0.2 (programs, sessions, settings). Two failure modes observed in the WebView, both silent:
+Tried IndexedDB as the storage layer for Hands Free Lift v0.2 (programs, sessions, settings). Two failure modes observed in the WebView, both silent:
 
 1. **Doesn't persist across launches.** Save settings, fully close the app, re-open: empty.
 2. **Hangs `await indexedDB.open()`.** First launch sometimes never resolves OR rejects, so anything `await`ed before the bridge connect call blocks the bootstrap. Symptom: phone stuck on the initial `<p>Connecting…</p>` HTML; bridge connection logs never fire.
 
-**Fix:** use `bridge.setLocalStorage` / `bridge.getLocalStorage` (exposed as `runtime.setStorage` / `runtime.getStorage` in `src/even.ts` wrappers). The SDK-provided KV is the only reliably persistent client store in this WebView. Cue / WordDaily / Pulse / Glance all use it; Hands Free initially didn't and got bitten.
+**Fix:** use `bridge.setLocalStorage` / `bridge.getLocalStorage` (exposed as `runtime.setStorage` / `runtime.getStorage` in `src/even.ts` wrappers). The SDK-provided KV is the only reliably persistent client store in this WebView. Cue / WordDaily / Pulse / Glance all use it; Hands Free Lift initially didn't and got bitten.
 
 **Also**: do storage work AFTER `connectEvenRuntime()` returns — never block bootstrap on a storage `await` that runs before bridge.
 
@@ -72,15 +72,17 @@ curl -H "User-Agent: Mozilla/5.0" ...
 
 Local Workerd doesn't behave identically to production for outbound `fetch()`-with-Upgrade calls — a successful upgrade can return 502 because the upstream connection isn't proxied. Test WebSocket-via-fetch against the deployed worker, not against `wrangler dev --local`.
 
-## SDK (`@evenrealities/even_hub_sdk` v0.0.10)
+## SDK (`@evenrealities/even_hub_sdk`)
 
 ### `setBackgroundState` / `onBackgroundRestore` don't exist
 
-The plugin docs reference these APIs but they're absent in v0.0.10. Re-fetch state on `FOREGROUND_ENTER_EVENT` instead of relying on a background-state hook.
+The plugin docs reference these APIs but they're absent through v0.0.16. Re-fetch state on `FOREGROUND_ENTER_EVENT` instead of relying on a background-state hook.
 
 ### Audio events arrive on the same `onEvenHubEvent` channel as input
 
 `bridge.audioControl(true)` enables mic capture; PCM frames arrive as `event.audioEvent.audioPcm` on the regular event handler. Don't expect a separate `onAudioFrame` channel.
+
+SDK 0.0.16 adds `audioEvent.speakerRole` (`self` / `other` / `unknown`) and a raw `direction` tag on glasses frames. The role is the Even app's guess from the direction sensor, not a firmware identity, and the phone mic (`audioControl(true, AudioInputSource.Phone)`) never carries one. Cue v0.6.0 gates on it behind a default-off setting and counts roles on the diagnostic overlay so the heuristic can be judged in the field before anything depends on it.
 
 ### `bridge.audioControl(true)` returns truthy regardless of permission
 
@@ -89,6 +91,12 @@ The return value indicates the call was accepted by the SDK, not that the OS gra
 ### Concurrent `textContainerUpgrade` calls crash the BLE link
 
 Always serialize render calls through a mutex. The `enqueue()` pattern in `src/even.ts` is the canonical fix.
+
+### SDK 0.0.14 and 0.0.15 can re-fire `setTimeout` / `setInterval` callbacks
+
+Both versions replace `window.setTimeout` / `window.setInterval` with a tracked wrapper (the bundle binds the originals and keeps a `Map` of live timers). The 0.0.16 changelog's only entry is "Fixed repeated execution of `setTimeout` / `setInterval` callbacks." Card Pack v0.4.3 and TrainForge v0.9.0 shipped on 0.0.14; both moved to 0.0.16 on 2026-11-03. Every other repo went 0.0.10 → 0.0.16 directly.
+
+A jsdom test that imports the SDK and asserts a timeout fires once passed on 0.0.14 too, so the repeat needs the host bridge and cannot be pinned in a unit test. The guard is on the version instead: `tests/sdk-floor.test.ts` fails when the pin is below 0.0.16, when the installed SDK differs from the pin, or when `app.json`'s `min_sdk_version` drifts from the installed SDK. Future bumps go to the newest 0.0.x, never back to 0.0.14 / 0.0.15. Packing with `--sdk-ver` stamps `min_app_version` 2.2.10 for 0.0.16.
 
 ## Testing
 

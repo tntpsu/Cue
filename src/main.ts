@@ -13,6 +13,7 @@ import {
   getMode,
   getShowDebugOverlay,
   getWearerSpeakerId,
+  getDropSelfAudio,
   getWorkerToken,
   getWorkerUrl,
   hasAgreedToPrivacy,
@@ -28,6 +29,7 @@ import {
   setShowDebugOverlay,
   setStorageBridge,
   setWearerSpeakerId,
+  setDropSelfAudio,
   getDirectKeys,
   setDirectKeys,
   setWorkerToken,
@@ -98,6 +100,7 @@ let autoPausedReason = ''
 
 // v0.4.0 settings — hydrated from storage on bootstrap.
 let showDebugOverlay = false  // diagnostic stats line on glasses
+let dropSelfAudio = false     // v0.6.0: glasses-side wearer frame drop
 let wearerSpeakerId = DEFAULT_WEARER_SPEAKER_ID  // -1 = none / no filter
 
 // Live transport health, so a failing session is visible instead of silent.
@@ -307,6 +310,14 @@ root.innerHTML = `
         <button id="calibrate-me" type="button" style="padding: .35rem .7rem; cursor: pointer; max-width: 220px; margin-top: .25rem;">Calibrate me (one-tap)</button>
         <p style="color: #7b7b7b; font-size: .85em; margin: 0;">Tap, put on glasses, say "this is me" — the next utterance Deepgram detects becomes your speaker ID. Replaces the dropdown above.</p>
         <p id="calibrate-status" style="color: #2a2; font-size: .85em; min-height: 1.2em; margin: 0;"></p>
+
+        <hr style="border: 0; border-top: 1px solid #eee; margin: .5rem 0;" />
+
+        <label style="display: flex; align-items: center; gap: .5rem; cursor: pointer;">
+          <input id="drop-self-audio" type="checkbox" />
+          Skip my own voice at the glasses (experimental)
+        </label>
+        <p style="color: #7b7b7b; font-size: .85em; margin: 0;">The Even app tags each audio frame as you or someone else from the glasses' direction sensor. When on, frames tagged as you are never sent for transcription, so your lines vanish from the transcript and the speaker picker above becomes a fallback. Off by default: if the tag is wrong, the other person goes missing instead. Check the diagnostic overlay's role counts before trusting it.</p>
       </div>
     </section>
 
@@ -379,6 +390,12 @@ const wearerSpeakerSelect = document.querySelector<HTMLSelectElement>('#wearer-s
 const wearerStatus = document.querySelector<HTMLParagraphElement>('#wearer-status')!
 const calibrateBtn = document.querySelector<HTMLButtonElement>('#calibrate-me')!
 const calibrateStatus = document.querySelector<HTMLParagraphElement>('#calibrate-status')!
+const dropSelfAudioInput = document.querySelector<HTMLInputElement>('#drop-self-audio')!
+
+dropSelfAudioInput.addEventListener('change', async () => {
+  dropSelfAudio = dropSelfAudioInput.checked
+  await setDropSelfAudio(dropSelfAudio)
+})
 
 calibrateBtn.addEventListener('click', async () => {
   await setCalibrating(true)
@@ -536,6 +553,10 @@ function renderGlasses(): string {
   if (showDebugOverlay && isRealMode && transport) {
     const s = transport.stats()
     lines.push(`audio frames=${s.framesReceived} chunks=${s.chunksFlushed}/${s.chunksOk}ok`)
+    if (even) {
+      const a = even.getAudioStats()
+      lines.push(`mic=${even.getMicSource() ?? 'none'} self=${a.self} other=${a.other} unk=${a.unknown} dropped=${a.dropped}`)
+    }
     if (s.lastError) {
       lines.push(`err: ${s.lastError}`)
     }
@@ -729,7 +750,7 @@ async function startRealSession(): Promise<void> {
   // sendAudioFrame; transport buffers and POSTs every CHUNK_MS.
   const ok = await even.startMic(frame => {
     transport?.sendAudioFrame(frame)
-  })
+  }, { dropSelf: dropSelfAudio })
   if (!ok) {
     lastTranscript = '(mic permission denied)'
     isRealMode = false
@@ -1080,6 +1101,8 @@ async function bootstrap(): Promise<void> {
   // Hydrate v0.4.0 toggles.
   showDebugOverlay = await getShowDebugOverlay()
   showDebugOverlayInput.checked = showDebugOverlay
+  dropSelfAudio = await getDropSelfAudio()
+  dropSelfAudioInput.checked = dropSelfAudio
   wearerSpeakerId = await getWearerSpeakerId()
   wearerSpeakerSelect.value = String(wearerSpeakerId)
   calibratingNow = await getCalibrating()

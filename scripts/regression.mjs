@@ -8,7 +8,7 @@
 //
 // Prereqs (run manually first):
 //   1. cd ~/Documents/Cue && npm run dev          # Vite on :5176
-//   2. npx evenhub-simulator --automation-port 9897 http://localhost:5176
+//   2. npm run sim                                 # simulator on :9897
 //
 // Then: npm run test:e2e
 

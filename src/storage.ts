@@ -51,6 +51,9 @@ const KEY_SHOW_DEBUG_OVERLAY = 'cue:show-debug-overlay:v1'
 // auto-detect (don't filter from suggestion context). 0/1/... = anchor
 // that speaker as wearer; suggestions exclude their lines.
 const KEY_WEARER_SPEAKER_ID = 'cue:wearer-speaker-id:v1'
+// v0.6.0: drop frames the Even app tags as the wearer before STT. Default
+// OFF until the app's direction heuristic is judged in the field.
+const KEY_DROP_SELF_AUDIO = 'cue:drop-self-audio:v1'
 // v0.5.0: bring-your-own keys for the direct-to-provider path. Stored in the
 // same per-app bridge storage as the Worker secret: on the phone, nowhere else.
 const KEY_DEEPGRAM_KEY = 'cue:deepgram-key:v1'
@@ -124,6 +127,14 @@ export async function getShowDebugOverlay(): Promise<boolean> {
 
 export async function setShowDebugOverlay(on: boolean): Promise<void> {
   await writeRaw(KEY_SHOW_DEBUG_OVERLAY, on ? '1' : '0')
+}
+
+export async function getDropSelfAudio(): Promise<boolean> {
+  return (await readRaw(KEY_DROP_SELF_AUDIO)) === '1'
+}
+
+export async function setDropSelfAudio(on: boolean): Promise<void> {
+  await writeRaw(KEY_DROP_SELF_AUDIO, on ? '1' : '0')
 }
 
 // Wearer speaker id: -1 = none / auto-detect (no filter), 0+ = anchor.

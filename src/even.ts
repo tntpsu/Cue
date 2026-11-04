@@ -4,6 +4,7 @@
 // state logs for the regression harness).
 
 import {
+  AudioInputSource,
   CreateStartUpPageContainer,
   EventSourceType,
   OsEventTypeList,
@@ -11,6 +12,13 @@ import {
   TextContainerUpgrade,
   waitForEvenAppBridge,
 } from '@evenrealities/even_hub_sdk'
+import {
+  type AudioFrameStats,
+  emptyAudioStats,
+  shouldDeliver,
+  speakerRoleOf,
+  tallyFrame,
+} from './audio-role'
 
 // Audio frame from the SDK's mic capture. Per the SDK README, audio comes
 // as PCM bytes — assumed 16kHz mono 16-bit little-endian (industry-standard
@@ -26,6 +34,12 @@ const HEIGHT = 288
 
 export type InputSource = 'glasses' | 'ring' | 'unknown'
 export type SwipeDir = 'up' | 'down'
+export type MicSource = 'glasses' | 'phone'
+
+export interface MicOptions {
+  // Drop frames the Even app tagged as the wearer before they reach STT.
+  dropSelf?: boolean
+}
 
 export interface EvenRuntime {
   render: (text: string) => Promise<void>
@@ -35,8 +49,12 @@ export interface EvenRuntime {
   onForeground: (handler: () => void) => void
   // Mic capture. Calling startMic emits PCM frames to the registered handler
   // until stopMic. Caller is responsible for routing frames to STT.
-  startMic: (handler: (frame: AudioFrame) => void) => Promise<boolean>
+  startMic: (handler: (frame: AudioFrame) => void, opts?: MicOptions) => Promise<boolean>
   stopMic: () => Promise<void>
+  // Which mic the last startMic opened, null until one succeeds.
+  getMicSource: () => MicSource | null
+  // Per-session frame tally by speaker role, reset on every startMic.
+  getAudioStats: () => AudioFrameStats
   exitApp: () => Promise<void>
   getStorage: (key: string) => Promise<string>
   setStorage: (key: string, value: string) => Promise<boolean>
@@ -101,6 +119,9 @@ export async function connectEvenRuntime(initial: string): Promise<EvenRuntime |
   let doubleTapHandler: ((source: InputSource) => void) | null = null
   let foregroundHandler: (() => void) | null = null
   let audioHandler: ((frame: AudioFrame) => void) | null = null
+  let dropSelf = false
+  let micSource: MicSource | null = null
+  let audioStats = emptyAudioStats()
   // Latest battery push from onDeviceStatusChanged. Push beats poll for
   // freshness and avoids hitting BLE on every tick.
   let cachedBattery: number | undefined
@@ -127,13 +148,18 @@ export async function connectEvenRuntime(initial: string): Promise<EvenRuntime |
   }
 
   bridge.onEvenHubEvent(event => {
-    // Audio frames are pushed via the same onEvenHubEvent channel —
-    // SDK 0.0.10 wraps them as `audioEvent.audioPcm: Uint8Array`. We
-    // hand the raw bytes to the registered handler; transport layer
-    // is responsible for shaping into Deepgram's expected encoding.
-    const audioEvent = (event as { audioEvent?: { audioPcm?: Uint8Array } }).audioEvent
-    if (audioEvent?.audioPcm && audioHandler) {
-      audioHandler(audioEvent.audioPcm)
+    // Audio frames are pushed via the same onEvenHubEvent channel as
+    // `audioEvent.audioPcm: Uint8Array`, tagged with the Even app's
+    // speaker-role guess. Raw bytes go to the registered handler; the
+    // transport layer shapes them into Deepgram's expected encoding.
+    const audioEvent = (event as {
+      audioEvent?: { audioPcm?: Uint8Array; speakerRole?: unknown }
+    }).audioEvent
+    if (audioEvent?.audioPcm) {
+      const role = speakerRoleOf(audioEvent.speakerRole)
+      const deliver = shouldDeliver(role, dropSelf)
+      tallyFrame(audioStats, role, deliver)
+      if (deliver && audioHandler) audioHandler(audioEvent.audioPcm)
       return
     }
     if (event.textEvent) {
@@ -172,20 +198,35 @@ export async function connectEvenRuntime(initial: string): Promise<EvenRuntime |
     onSwipe(h) { swipeHandler = h },
     onDoubleTap(h) { doubleTapHandler = h },
     onForeground(h) { foregroundHandler = h },
-    async startMic(handler) {
+    async startMic(handler, opts) {
       audioHandler = handler
+      dropSelf = opts?.dropSelf ?? false
+      audioStats = emptyAudioStats()
+      micSource = null
+      // The glasses mic is the default. A false return there (glasses not
+      // connected) falls back to the phone mic, which has no speaker tags.
       try {
-        const ok = await bridge.audioControl(true)
-        return !!ok
-      } catch {
-        audioHandler = null
-        return false
-      }
+        if (await bridge.audioControl(true, AudioInputSource.Glasses)) {
+          micSource = 'glasses'
+          return true
+        }
+      } catch { /* try the phone mic below */ }
+      try {
+        if (await bridge.audioControl(true, AudioInputSource.Phone)) {
+          micSource = 'phone'
+          return true
+        }
+      } catch { /* both refused */ }
+      audioHandler = null
+      return false
     },
     async stopMic() {
       audioHandler = null
+      micSource = null
       try { await bridge.audioControl(false) } catch { /* ignore */ }
     },
+    getMicSource() { return micSource },
+    getAudioStats() { return { ...audioStats } },
     async exitApp(): Promise<void> { await bridge.shutDownPageContainer(1) },
     async getStorage(key) {
       try { return await bridge.getLocalStorage(key) } catch { return '' }
