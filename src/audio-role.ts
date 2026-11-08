@@ -35,3 +35,29 @@ export function tallyFrame(stats: AudioFrameStats, role: SpeakerRole, delivered:
   stats[role] += 1
   if (!delivered) stats.dropped += 1
 }
+
+// Raw glasses direction tag per frame (null on the phone mic and older
+// hosts), tallied against the role the app derived from it. Field data
+// for judging the heuristic; nothing is gated on it.
+export type DirectionKey = number | 'none'
+export type DirectionTally = Record<SpeakerRole, number>
+export type DirectionStats = Map<DirectionKey, DirectionTally>
+
+export function directionKeyOf(raw: unknown): DirectionKey {
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : 'none'
+}
+
+export function tallyDirection(stats: DirectionStats, key: DirectionKey, role: SpeakerRole): void {
+  const t = stats.get(key) ?? { self: 0, other: 0, unknown: 0 }
+  t[role] += 1
+  stats.set(key, t)
+}
+
+// "d0:s12/o3/u0 d1:s0/o40/u2", busiest directions first, capped so the
+// line fits the overlay. Empty tally reads "none".
+export function summarizeDirections(stats: DirectionStats, max = 3): string {
+  const total = (t: DirectionTally) => t.self + t.other + t.unknown
+  const rows = [...stats.entries()].sort((a, b) => total(b[1]) - total(a[1])).slice(0, max)
+  if (rows.length === 0) return 'none'
+  return rows.map(([k, t]) => `d${k === 'none' ? '?' : k}:s${t.self}/o${t.other}/u${t.unknown}`).join(' ')
+}

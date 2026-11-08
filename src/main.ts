@@ -3,6 +3,8 @@
 // See ~/Documents/Pulse/ROADMAP.md § "Plan: Cue" for the full plan.
 
 import { connectEvenRuntime, type EvenRuntime, type InputSource, type SwipeDir } from './even'
+import { summarizeDirections } from './audio-role'
+import { CUE_MENU, menuActionFor } from './menu'
 import { DEFAULT_MODE, MODES, type Mode, type ModeId, modeById, nextMode } from './modes'
 import { nextMockExchange, nextMockProactiveTopics, resetMock } from './mock'
 import {
@@ -134,6 +136,16 @@ function shortTransportAlert(msg: string): string {
 // v0.4.2: when true, the next non-empty utterance's speaker is anchored
 // as wearer + the flag is cleared. Set by phone-side "Calibrate me".
 let calibratingNow = false
+// Short-lived line on the glasses for menu actions (calibration prompt,
+// "got it", why a command did nothing). Cleared by timer.
+let glassesNotice = ''
+let glassesNoticeTimer: number | undefined
+function setGlassesNotice(text: string, ms: number): void {
+  glassesNotice = text
+  if (glassesNoticeTimer !== undefined) window.clearTimeout(glassesNoticeTimer)
+  glassesNoticeTimer = window.setTimeout(() => { glassesNotice = ''; void paint() }, ms)
+  void paint()
+}
 
 // v0.4.3: session-record bookkeeping — captures mic-on → mic-off as
 // one entry in the persisted session-history. Resets on each mic-on.
@@ -397,12 +409,17 @@ dropSelfAudioInput.addEventListener('change', async () => {
   await setDropSelfAudio(dropSelfAudio)
 })
 
-calibrateBtn.addEventListener('click', async () => {
+async function beginCalibration(): Promise<void> {
   await setCalibrating(true)
   calibratingNow = true
   calibrateStatus.style.color = '#2a2'
   calibrateStatus.textContent = 'Listening for your voice — say "this is me" within ~10s.'
   window.setTimeout(() => { calibrateStatus.textContent = '' }, 12_000)
+  setGlassesNotice(micOn ? 'Calibrating: say "this is me"' : 'Calibrating: tap for mic, say "this is me"', 12_000)
+}
+
+calibrateBtn.addEventListener('click', async () => {
+  await beginCalibration()
 })
 
 showDebugOverlayInput.addEventListener('change', async () => {
@@ -472,6 +489,7 @@ const MODE_BULLET: Record<ModeId, string> = {
   sting: '▲',
   listen: '●',
   interview: '▣',
+  trivia: '◈',
   custom: '◆',
 }
 
@@ -514,13 +532,18 @@ function renderGlasses(): string {
       idleLines.push(autoPausedReason)
       idleLines.push('')
     }
+    if (glassesNotice) {
+      idleLines.push(glassesNotice)
+      idleLines.push('')
+    }
     idleLines.push(`${isRealMode ? '◎ live' : '◌ mock'} ready`)
-    idleLines.push('[tap] start mic')
+    idleLines.push('[tap] start mic  [hold] menu')
     idleLines.push('[2x] cycle mode')
     return idleLines.join('\n')
   }
   // Live view.
   const lines: string[] = [header, '']
+  if (glassesNotice) lines.push(glassesNotice)
   // v0.4.0: render up to MAX_DISPLAYED_TURNS of the rolling conversation
   // with [A]/[B] speaker labels. Wearer's turns marked "(you)" so the
   // user knows we're filtering them from the suggestion context.
@@ -556,6 +579,7 @@ function renderGlasses(): string {
     if (even) {
       const a = even.getAudioStats()
       lines.push(`mic=${even.getMicSource() ?? 'none'} self=${a.self} other=${a.other} unk=${a.unknown} dropped=${a.dropped}`)
+      lines.push(`dir ${summarizeDirections(even.getDirectionStats())}`)
     }
     if (s.lastError) {
       lines.push(`err: ${s.lastError}`)
@@ -565,9 +589,8 @@ function renderGlasses(): string {
   lines.push('—'.repeat(20))
   if (suggestions.length > 0) {
     const bullet = MODE_BULLET[currentMode] ?? '·'
-    const isCustom = currentMode === 'custom'
     suggestions.slice(0, 3).forEach((s, i) => {
-      const label = isCustom ? s.trim() : emphasizeFirstWord(s)
+      const label = mode.emphasizeFirstWord ? emphasizeFirstWord(s) : s.trim()
       const prefix = `${i + 1}.${bullet} `
       const wrapped = wrapWords(label, LINE_WIDTH - prefix.length, SUGGESTION_MAX_LINES)
       wrapped.forEach((ln, j) => {
@@ -805,6 +828,7 @@ function onTranscriptFrame(e: TranscriptEvent): void {
       calibrateStatus.textContent = `Got it — Speaker ${speakerLabel(firstSpeaker)} is you.`
       window.setTimeout(() => { calibrateStatus.textContent = '' }, 5_000)
     }
+    setGlassesNotice(`Got it: Speaker ${speakerLabel(firstSpeaker)} is you`, 5_000)
   }
 
   // Build the rolling LLM-context buffer EXCLUDING the wearer's lines
@@ -854,8 +878,9 @@ async function maybeRequestSuggestions(): Promise<void> {
       transcript: liveTranscript,
       customPrompt,
       // v0.4.2: send recent suggestions so worker can dedupe — no LLM
-      // re-emitting the same advice 3 times in a row.
-      recentSuggestions: recentSuggestionsRing.slice(),
+      // re-emitting the same advice 3 times in a row. Trivia opts out: a
+      // repeated question deserves the same answer.
+      recentSuggestions: modeById(currentMode).dedupeSuggestions ? recentSuggestionsRing.slice() : [],
     })
     if (result.ok) {
       suggestions = result.suggestions
@@ -881,11 +906,27 @@ async function maybeRequestSuggestions(): Promise<void> {
 const RECENT_SUGGESTIONS_CAP = 12
 const recentSuggestionsRing: string[] = []
 
-async function cycleMode(): Promise<void> {
-  currentMode = nextMode(currentMode)
+async function selectMode(mode: ModeId): Promise<void> {
+  currentMode = mode
   await setMode(currentMode)
   renderModeList()
   await paint()
+}
+
+async function cycleMode(): Promise<void> {
+  await selectMode(nextMode(currentMode))
+}
+
+// Tap-and-hold menu. Mode switches work mid-session (the next suggestion
+// uses the new prompt); the two commands say why when they cannot run.
+function onMenuSelect(itemID: number): void {
+  const action = menuActionFor(itemID)
+  if (!action) return
+  if (action.kind === 'mode') { void selectMode(action.mode); return }
+  if (action.kind === 'calibrate') { void beginCalibration(); return }
+  if (!micOn) { setGlassesNotice('Fresh topics need the mic on', 4_000); return }
+  if (!modeById(currentMode).proactiveSupported) { setGlassesNotice('Fresh topics: Date or Custom only', 4_000); return }
+  void showProactiveTopics()
 }
 
 function onTap(_src: InputSource): void {
@@ -1066,7 +1107,7 @@ async function bootstrap(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log('[cue] bootstrap start')
   status.textContent = 'Connecting to glasses…'
-  even = await connectEvenRuntime(`Cue v${__APP_VERSION__}\n\nLoading…`)
+  even = await connectEvenRuntime(`Cue v${__APP_VERSION__}\n\nLoading…`, CUE_MENU)
 
   if (even) {
     setStorageBridge({ getStorage: even.getStorage, setStorage: even.setStorage })
@@ -1127,6 +1168,7 @@ async function bootstrap(): Promise<void> {
   even.onSwipe(onSwipe)
   even.onDoubleTap(onDoubleTap)
   even.onForeground(() => { void paint() })
+  even.onMenuSelect(onMenuSelect)
 
   // One-shot battery read so the idle screen shows the glyph before the
   // first mic-tick. The tick keeps it fresh while mic is on; without this

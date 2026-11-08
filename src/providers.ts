@@ -150,11 +150,11 @@ export async function transcribeDirect(
  *  "don't repeat these" note from the rolling suggestion list. */
 export function buildSystemPrompt(params: { mode: string; customPrompt?: string; recentSuggestions?: string[] }): string {
   const custom = params.customPrompt?.trim()
-  const modePrompt = MODES.find(m => m.id === (params.mode as ModeId))?.systemPrompt
-    ?? MODES.find(m => m.id === 'date')?.systemPrompt
-    ?? ''
-  const base = custom || modePrompt
-  const recent = (params.recentSuggestions ?? []).filter(s => typeof s === 'string' && s.trim()).slice(-12)
+  const mode = MODES.find(m => m.id === (params.mode as ModeId)) ?? MODES.find(m => m.id === 'date')
+  const base = custom || mode?.systemPrompt || ''
+  const recent = mode?.dedupeSuggestions === false
+    ? []
+    : (params.recentSuggestions ?? []).filter(s => typeof s === 'string' && s.trim()).slice(-12)
   const dedupe = recent.length > 0
     ? `\n\nDO NOT repeat any of these recent suggestions verbatim or near-verbatim — find a different angle:\n${recent.map(s => `- ${s}`).join('\n')}`
     : ''

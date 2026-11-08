@@ -20,6 +20,18 @@ describe('mock driver', () => {
     }
   })
 
+  it('trivia and custom cycle only the entries written for them', () => {
+    for (let i = 0; i < 4; i += 1) {
+      const ex = nextMockExchange('trivia')
+      expect(ex.transcript).toMatch(/\?$/)
+      expect(ex.suggestions[0]).not.toMatch(/\?/)
+    }
+    resetMock()
+    for (let i = 0; i < 4; i += 1) {
+      expect(nextMockExchange('custom').suggestions[0]).toMatch(/custom/i)
+    }
+  })
+
   it('cycles through script entries (script length > 1)', () => {
     const a = nextMockExchange('date').transcript
     const b = nextMockExchange('date').transcript

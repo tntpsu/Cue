@@ -37,6 +37,16 @@ async function input(action) {
   })
   if (!r.ok) throw new Error(`input ${action} failed: ${r.status}`)
 }
+const sleep = ms => new Promise(r => setTimeout(r, ms))
+
+async function menuPick(index) {
+  await input('context_menu')
+  await sleep(400)
+  for (let i = 0; i < index; i += 1) { await input('down'); await sleep(150) }
+  await input('click')
+  await sleep(900)
+}
+
 async function fetchConsoleEntries() {
   const r = await fetch(`${SIM_BASE}/api/console`)
   const body = await r.json()
@@ -114,6 +124,19 @@ async function main() {
   )
   check('double-tap cycles mode in idle state', cycled.message.includes('mic=off'), cycled.message)
   await screenshot('02-mode-cycled')
+
+  console.log('1b. Tap-and-hold menu switches mode')
+  // Simulator 0.9+: context_menu opens the SDK menu, down moves focus,
+  // click fires menuItemClickEvent and closes the panel by itself. Item 4
+  // is "Switch to Sting" (cycle order in src/modes.ts); item 1 is Date.
+  // A gesture sent right after the click is swallowed, so settle ~900 ms.
+  await menuPick(3)
+  const sting = await waitForState(m => m.includes('mode=sting') && m.includes('mic=off'), { label: 'menu → sting', timeoutMs: 4_000 })
+  check('menu item switches to Sting while idle', sting.message.includes('mode=sting'), sting.message)
+  await menuPick(0)
+  const date = await waitForState(m => m.includes('mode=date') && m.includes('mic=off'), { label: 'menu → date', timeoutMs: 4_000 })
+  check('menu item switches back to Date', date.message.includes('mode=date'), date.message)
+  await screenshot('02b-menu-mode')
 
   console.log('2. Tap to start mock session')
   await input('click')

@@ -29,10 +29,10 @@ const SIM_CMD = existsSync(NATIVE)
   : { bin: process.execPath, args: [join(HERE, '..', 'node_modules', '@evenrealities', 'evenhub-simulator', 'bin', 'index.js')] }
 
 // Mode ids in cycle order (src/modes.ts) and which ones make good shots.
-const CYCLE = ['date', 'argue-calm', 'sales-close', 'sting', 'listen', 'interview', 'custom']
+const CYCLE = ['date', 'argue-calm', 'sales-close', 'sting', 'listen', 'interview', 'trivia', 'custom']
 // Interview and Custom have no mock lines of their own (they fall back to Date's),
-// so a shot of them would misrepresent the mode. Sting has its own.
-const TARGETS = ['date', 'argue-calm', 'sales-close', 'sting', 'listen']
+// so a shot of them would misrepresent the mode. Sting and Trivia have their own.
+const TARGETS = ['date', 'argue-calm', 'sales-close', 'sting', 'listen', 'trivia']
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 async function ping() { const r = await fetch(`${SIM_BASE}/api/ping`).catch(() => null); return !!(r && r.ok) }

@@ -12,7 +12,9 @@ interface MockEntry {
 }
 
 // A small ring of plausible exchanges. Cycle on each tick. Designed to be
-// mode-agnostic on the transcript side; the suggestions vary per mode.
+// mode-agnostic on the transcript side; the suggestions vary per mode. A
+// mode that has its own lines on some entries (trivia, custom) cycles only
+// those, so its demo never shows another mode's advice.
 const SCRIPT: MockEntry[] = [
   {
     transcript: 'I started painting again last weekend after years off.',
@@ -147,6 +149,18 @@ const SCRIPT: MockEntry[] = [
       ],
     },
   },
+  {
+    transcript: 'Question seven. Which planet in our solar system has the most known moons?',
+    suggestionsByMode: {
+      trivia: ['Saturn', 'Runner-up: Jupiter'],
+    },
+  },
+  {
+    transcript: 'Next one, for ten points. In what year did the Berlin Wall fall?',
+    suggestionsByMode: {
+      trivia: ['1989', 'November 9th, 1989'],
+    },
+  },
 ]
 
 const PROACTIVE_TOPICS_BY_MODE: Partial<Record<ModeId, string[][]>> = {
@@ -174,7 +188,9 @@ let scriptIdx = 0
 let proactiveIdx = 0
 
 export function nextMockExchange(mode: ModeId): { transcript: string; suggestions: string[] } {
-  const entry = SCRIPT[scriptIdx % SCRIPT.length]!
+  const own = SCRIPT.filter(e => e.suggestionsByMode[mode])
+  const pool = own.length > 0 ? own : SCRIPT
+  const entry = pool[scriptIdx % pool.length]!
   scriptIdx += 1
   const suggestions =
     entry.suggestionsByMode[mode] ??

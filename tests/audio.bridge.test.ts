@@ -28,6 +28,7 @@ interface FakeRuntime {
   onSwipe: (h: (dir: string, src: string) => void) => void
   onDoubleTap: (h: (src: string) => void) => void
   onForeground: (h: () => void) => void
+  onMenuSelect: (h: (id: number) => void) => void
   startMic: (h: (frame: Uint8Array) => void) => Promise<boolean>
   stopMic: () => Promise<void>
   exitApp: () => Promise<void>
@@ -36,6 +37,7 @@ interface FakeRuntime {
   getBatteryLevel: () => Promise<number | undefined>
   getMicSource: () => 'glasses' | 'phone' | null
   getAudioStats: () => { frames: number; self: number; other: number; unknown: number; dropped: number }
+  getDirectionStats: () => Map<number | 'none', { self: number; other: number; unknown: number }>
 }
 
 interface FakeBridge {
@@ -67,6 +69,7 @@ function createFakeBridge(initialBattery: number | undefined = 80): FakeBridge {
     onSwipe: () => {},
     onDoubleTap: h => { doubleTapHandler = h },
     onForeground: h => { foregroundHandler = h },
+    onMenuSelect: () => {},
     startMic: async (h: (frame: Uint8Array) => void) => {
       mic = true
       frameHandler = h
@@ -79,6 +82,7 @@ function createFakeBridge(initialBattery: number | undefined = 80): FakeBridge {
     getBatteryLevel: async () => battery,
     getMicSource: () => (mic ? 'glasses' : null),
     getAudioStats: () => ({ frames: 0, self: 0, other: 0, unknown: 0, dropped: 0 }),
+    getDirectionStats: () => new Map(),
   }
   return {
     runtime,

@@ -42,11 +42,13 @@ function installBridge(opts: BridgeOpts = {}) {
   }
   return {
     calls,
-    emit: (speakerRole?: unknown) => {
+    emit: (speakerRole?: unknown, direction?: unknown) => {
       const audioEvent: Record<string, unknown> = { audioPcm: new Uint8Array([1, 2, 3]) }
       if (speakerRole !== undefined) audioEvent.speakerRole = speakerRole
+      if (direction !== undefined) audioEvent.direction = direction
       listener?.({ audioEvent })
     },
+    clickMenu: (itemID: unknown) => { listener?.({ menuItemClickEvent: { itemID } }) },
   }
 }
 
@@ -132,5 +134,43 @@ describe('mic source fallback', () => {
     await runtime.stopMic()
     expect(runtime.getMicSource()).toBeNull()
     expect(fake.calls.at(-1)).toEqual([false, undefined])
+  })
+})
+
+describe('direction tally', () => {
+  it('counts role per raw direction, folds phone-mic null into none, resets on startMic', async () => {
+    const { fake, runtime } = await boot()
+    await runtime.startMic(() => {})
+    fake.emit('other', 1); fake.emit('other', 1); fake.emit('self', 0); fake.emit('unknown', null); fake.emit()
+    expect(runtime.getDirectionStats().get(1)).toEqual({ self: 0, other: 2, unknown: 0 })
+    expect(runtime.getDirectionStats().get(0)).toEqual({ self: 1, other: 0, unknown: 0 })
+    expect(runtime.getDirectionStats().get('none')).toEqual({ self: 0, other: 0, unknown: 2 })
+    await runtime.stopMic()
+    await runtime.startMic(() => {})
+    expect(runtime.getDirectionStats().size).toBe(0)
+  })
+})
+
+describe('contextual menu', () => {
+  it('passes the menu to the startup page and dispatches numeric item clicks', async () => {
+    let page: unknown
+    const fake = installBridge()
+    ;(hoisted.bridge as { createStartUpPageContainer: unknown }).createStartUpPageContainer = async (p: unknown) => { page = p; return 0 }
+    const runtime = await connectEvenRuntime('hello', [{ id: 7, label: 'Switch to Date' }, { id: 0, label: 'bad id' }])
+    if (!runtime) throw new Error('runtime did not connect')
+    const menu = (page as { menuObject?: { menuItems: Array<{ itemID: number; itemName: string }> } }).menuObject
+    expect(menu?.menuItems.map(m => [m.itemID, m.itemName])).toEqual([[7, 'Switch to Date']])
+    const got: number[] = []
+    runtime.onMenuSelect(id => { got.push(id) })
+    fake.clickMenu(7); fake.clickMenu('7'); fake.clickMenu(undefined)
+    expect(got).toEqual([7])
+  })
+
+  it('sends no menuObject when every item is invalid or the list is empty', async () => {
+    let page: unknown
+    installBridge()
+    ;(hoisted.bridge as { createStartUpPageContainer: unknown }).createStartUpPageContainer = async (p: unknown) => { page = p; return 0 }
+    await connectEvenRuntime('hello', [{ id: 0, label: 'bad' }])
+    expect((page as { menuObject?: unknown }).menuObject).toBeUndefined()
   })
 })

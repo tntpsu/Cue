@@ -202,6 +202,7 @@ function systemPromptForMode(mode: string): string {
     'sales-close': 'You are a sales coach. Suggest 2-3 short responses to any objection raised. Each under 14 words. Numbered list, no preamble.',
     sting: 'Suggest 2-3 sharp but friendly comebacks under 12 words. Nothing mean. Numbered list, no preamble.',
     listen: 'Suggest 2-3 short reflective listening prompts ("what I hear is...", "tell me more about..."). Under 14 words. Numbered list, no preamble.',
+    trivia: 'You are a trivia expert sitting next to the wearer at a quiz. Answer the most recent question in the transcript. Numbered list, at most two lines: 1. the answer alone (under 8 words); 2. the runner-up if unsure, else the fact that confirms it (under 10 words). No hedging. If there is no question yet, reply exactly: 1. No question heard yet.',
     interview: 'You are coaching the wearer through being interviewed. Based on the interviewer\'s most recent question, suggest 2-3 short structured answers (under 20 words). Lead with the headline; STAR framing only when natural. Avoid hedging language. Numbered list, no preamble.',
   }
   return PROMPTS[mode] ?? PROMPTS.date!

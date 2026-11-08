@@ -19,6 +19,21 @@ describe('mode registry', () => {
         expect(m.systemPrompt.length).toBeGreaterThan(20)
       }
       expect(typeof m.proactiveSupported).toBe('boolean')
+      expect(typeof m.emphasizeFirstWord).toBe('boolean')
+      expect(typeof m.dedupeSuggestions).toBe('boolean')
+    }
+  })
+
+  it('trivia shows answers verbatim and may repeat one; every coaching mode emphasizes and dedupes', () => {
+    const trivia = modeById('trivia')
+    expect(trivia.emphasizeFirstWord).toBe(false)
+    expect(trivia.dedupeSuggestions).toBe(false)
+    expect(trivia.proactiveSupported).toBe(false)
+    expect(trivia.systemPrompt).toMatch(/No question heard yet/)
+    expect(modeById('custom').emphasizeFirstWord).toBe(false)
+    for (const m of MODES.filter(x => x.id !== 'trivia' && x.id !== 'custom')) {
+      expect(m.emphasizeFirstWord, m.id).toBe(true)
+      expect(m.dedupeSuggestions, m.id).toBe(true)
     }
   })
 

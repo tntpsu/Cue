@@ -5,7 +5,16 @@
 
 import { describe, expect, it } from 'vitest'
 import { AudioSpeakerRole } from '@evenrealities/even_hub_sdk'
-import { emptyAudioStats, shouldDeliver, speakerRoleOf, tallyFrame } from '../src/audio-role'
+import {
+  type DirectionStats,
+  directionKeyOf,
+  emptyAudioStats,
+  shouldDeliver,
+  speakerRoleOf,
+  summarizeDirections,
+  tallyDirection,
+  tallyFrame,
+} from '../src/audio-role'
 
 describe('speakerRoleOf', () => {
   it('maps every SDK role to its literal', () => {
@@ -40,5 +49,24 @@ describe('tallyFrame', () => {
     tallyFrame(s, 'other', true)
     tallyFrame(s, 'unknown', true)
     expect(s).toEqual({ frames: 4, self: 2, other: 1, unknown: 1, dropped: 1 })
+  })
+})
+
+describe('direction tally', () => {
+  it('keys finite numbers and folds everything else into none', () => {
+    expect(directionKeyOf(0)).toBe(0)
+    expect(directionKeyOf(3)).toBe(3)
+    for (const raw of [null, undefined, NaN, Infinity, '1', {}]) expect(directionKeyOf(raw)).toBe('none')
+  })
+
+  it('counts roles per direction and summarizes busiest first, capped', () => {
+    const stats: DirectionStats = new Map()
+    expect(summarizeDirections(stats)).toBe('none')
+    tallyDirection(stats, 1, 'other'); tallyDirection(stats, 1, 'other'); tallyDirection(stats, 1, 'unknown')
+    tallyDirection(stats, 0, 'self')
+    tallyDirection(stats, 'none', 'unknown')
+    tallyDirection(stats, 2, 'other'); tallyDirection(stats, 2, 'other')
+    expect(summarizeDirections(stats)).toBe('d1:s0/o2/u1 d2:s0/o2/u0 d0:s1/o0/u0')
+    expect(summarizeDirections(stats, 4)).toContain('d?:s0/o0/u1')
   })
 })

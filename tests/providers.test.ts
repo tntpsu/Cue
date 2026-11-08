@@ -96,6 +96,11 @@ describe('buildSystemPrompt', () => {
     expect(withRecent).toContain(MODES.find(m => m.id === 'sting')!.systemPrompt)
     expect(withRecent).toMatch(/DO NOT repeat[\s\S]*- a\n- b$/)
   })
+
+  it('leaves the do-not-repeat note off for trivia, where a repeated question deserves the same answer', () => {
+    const trivia = MODES.find(m => m.id === 'trivia')!.systemPrompt
+    expect(buildSystemPrompt({ mode: 'trivia', recentSuggestions: ['Saturn', '1989'] })).toBe(trivia)
+  })
 })
 
 describe('parseNumberedList', () => {

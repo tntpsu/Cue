@@ -2,10 +2,12 @@
 
 > **Helps you say the right thing.**
 
-A multi-mode conversation coach for Even Realities G2 smart glasses. Listens to the conversation, surfaces 2-3 suggested responses on the display in real time. Pick a mode (Date / Argue calm / Sales close / Sting / Listen well / Custom) to shape the suggestions. The app never speaks for you — it offers cues you say in your own voice.
+A multi-mode conversation coach for Even Realities G2 smart glasses. Listens to the conversation, surfaces 2-3 suggested responses on the display in real time. Pick a mode (Date / Argue calm / Sales close / Sting / Listen well / Interview / Trivia / Custom) to shape the suggestions. The app never speaks for you — it offers cues you say in your own voice.
 
-## Status: v0.6.0 (SDK 0.0.16: speaker-role gate, phone-mic fallback)
+## Status: v0.7.0 (Trivia mode, tap-and-hold menu, direction logging)
 
+> **v0.7.0 (2026-11-08):** New **Trivia** mode (◈): the LLM answers the most recent question in the transcript, best answer first and runner-up second, instead of coaching a reply. Answers are shown as written (no first-word emphasis) and the do-not-repeat note is skipped, so a repeated question gets the same answer. Mock mode has two quiz questions of its own; the store listing gains a sixth screenshot. Untested against a host on a PA in a loud room; the glasses mic is near-field. Also new: the SDK 0.0.14 **tap-and-hold menu** with one "Switch to …" item per mode plus Calibrate me and Fresh topics (ten items, the firmware cap), so a mode is one gesture away instead of up to seven double-taps and topics no longer need a ring. The diagnostic overlay gains a `dir` line tallying each frame's raw glasses direction tag against the self/other role, field data for judging the speaker heuristic. 160 unit + 7 e2e green.
+>
 > **v0.6.0 (2026-11-03):** SDK 0.0.10 → **0.0.16**, simulator 0.9.5, CLI 0.2.0; the install floor is now Even app 2.2.10. The glasses mic opens via `AudioInputSource.Glasses` and falls back to the phone mic if the glasses refuse. Each audio frame's `speakerRole` tag is counted on the diagnostic overlay, and a new default-off setting ("Skip my own voice at the glasses") drops frames tagged as you before transcription. It stays off until the overlay shows the tag is trustworthy; the Deepgram speaker picker remains the fallback. `tests/sdk-floor.test.ts` refuses a pin below 0.0.16. 146 unit + 5 e2e green.
 
 > **Distribution (resolved in v0.5.0):** the Even Hub network whitelist is a static list of exact origins fixed at pack time ([docs](https://hub.evenrealities.com/docs/build/networking)), so each user cannot point Cue at their own Worker. Cue now talks to `api.deepgram.com` and `api.anthropic.com` / `api.openai.com` directly with keys the user pastes in phone settings; those three origins are the same for every install, so they are whitelisted once. The personal Worker remains as an advanced option.
@@ -26,8 +28,9 @@ If you've deployed the personal Worker (see `worker-template/README.md`) and pas
 | v0.4.2 | "Calibrate me" — one tap anchors the next speaker heard as the wearer, persisted across reload. |
 | v0.4.3 | Per-session transcript persistence: one record per mic-on/mic-off pair (mode, other speakers' transcript, suggestion count), capped at 50 newest-first, reviewable and clearable in phone settings. |
 | v0.4.4 | Correctness pass, no new features. Three glyphs were missing from the firmware font and drew as boxes: the battery indicator above 20% charge (so, nearly always), the Sting mode marker, and the `live` indicator that tells you a Worker is configured. Both rejection-class phone-layout bugs fixed (`overflow-x` on the wrapper, `max-width`/`box-sizing` on the speaker selector) and proved at 320/390/430px in WebKit. A failing session now says so on the glasses (`ERR rate limited`, `ERR key rejected`) instead of looking like silence. Mic permission text corrected to match what the app actually stores. 114 tests. |
-| **v0.5.0** *(current)* | Bring your own keys. A "Your API keys" section in phone settings (LLM provider + key, Deepgram key) makes Cue call the providers directly from the plugin; keys live in the app's on-device storage and go only to those providers. `src/providers.ts` ports the Worker's WAV wrap, Deepgram batch call, prompt assembly and Anthropic/OpenAI calls; `transport.ts` runs either backend behind one chunking pipeline (keys win, then Worker, then mock). Whitelist carries the three provider origins. Packed with CLI 0.1.14 (`--sdk-ver` pinned to the installed SDK). |
-| v0.6.0 *(planned)* | SDK 0.0.14 + `speakerRole` auto-anchoring: the glasses tag each audio frame self/other, so "which speaker is you" resolves itself; Calibrate me stays as the fallback. Moves the floor to Even App 2.2.9. |
+| v0.5.0 | Bring your own keys. A "Your API keys" section in phone settings (LLM provider + key, Deepgram key) makes Cue call the providers directly from the plugin; keys live in the app's on-device storage and go only to those providers. `src/providers.ts` ports the Worker's WAV wrap, Deepgram batch call, prompt assembly and Anthropic/OpenAI calls; `transport.ts` runs either backend behind one chunking pipeline (keys win, then Worker, then mock). Whitelist carries the three provider origins. Packed with CLI 0.1.14 (`--sdk-ver` pinned to the installed SDK). |
+| v0.6.0 | SDK 0.0.16, simulator 0.9.5, CLI 0.2.0; floor Even app 2.2.10. Glasses mic via `AudioInputSource.Glasses` with phone-mic fallback. `speakerRole` tallied on the diagnostic overlay and gated behind the default-off "Skip my own voice" setting; the Deepgram speaker picker stays the fallback. `tests/sdk-floor.test.ts` refuses a pin below 0.0.16. |
+| **v0.7.0** *(current)* | Trivia mode: answers the question just asked (best answer, then runner-up). Per-mode `emphasizeFirstWord` / `dedupeSuggestions` flags replace the custom-mode special case; mock mode cycles only a mode's own entries when it has any. Sixth store screenshot. Tap-and-hold contextual menu (`src/menu.ts`): Switch to each mode, Calibrate me, Fresh topics; calibration now also prompts on the glasses. Overlay `dir` line tallies raw direction tag × speaker role. |
 
 ## How it works (current v0.2.0)
 
@@ -57,8 +60,10 @@ If you've deployed the personal Worker (see `worker-template/README.md`) and pas
 | ★ | **Date** | Curious, warm. Suggests questions and follow-ups. Ring-tap for fresh topics when stuck. |
 | ◇ | **Argue calm** | Validating, deescalating. For tense conversations. |
 | ▶ | **Sales close** | Listens for objections, suggests handlers. |
-| ⚡ | **Sting** | Sharp witty comebacks. Banter mode. |
+| ▲ | **Sting** | Sharp witty comebacks. Banter mode. |
 | ● | **Listen well** | Reflective listening prompts ("what I hear is…", "tell me more"). |
+| ▣ | **Interview** | Crisp, structured answers when you are the one being interviewed. |
+| ◈ | **Trivia** | Answers the question just asked: best answer first, runner-up second. Pub quizzes; untested against a PA in a loud bar. |
 | ◆ | **Custom** | Use your own system prompt (write it in phone settings). |
 
 ## Glasses gestures
@@ -67,6 +72,7 @@ If you've deployed the personal Worker (see `worker-template/README.md`) and pas
 |---|---|
 | Single tap (mic off) | Start mic session |
 | Single tap (mic on) | Stop mic session |
+| Tap and hold | Contextual menu: Switch to any mode, Calibrate me, Fresh topics |
 | Double tap (mic off) | Cycle to next mode |
 | Ring double tap (mic on) | Request fresh topics (proactive — date / custom modes) |
 | Glasses double tap (mic on) | Exit app (also stops mic) |

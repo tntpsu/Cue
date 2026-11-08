@@ -1,6 +1,6 @@
-# TESTS — coverage matrix (Cue v0.6.0)
+# TESTS — coverage matrix (Cue v0.7.0)
 
-Last updated: 2026-11-03 (v0.6.0 SDK 0.0.16: speaker-role gate, phone-mic fallback, SDK floor guard).
+Last updated: 2026-11-08 (v0.7.0 Trivia mode, tap-and-hold menu, direction tally on the overlay).
 
 Full taxonomy + discipline: `~/.claude/skills/coverage-matrix/SKILL.md`. Empty cells block the next ship. `/ship-app` blocks if this file has unfilled cells.
 
@@ -12,6 +12,9 @@ Full taxonomy + discipline: `~/.claude/skills/coverage-matrix/SKILL.md`. Empty c
 | Tap to start mock session | e2e:2 | n/a | n/a | n/a | n/a | manual |
 | Tap to start real (Worker) session | manual:hw | n/a | manual:hw | manual:hw | manual:hw | manual |
 | Mode cycle via double-tap | e2e:1 (idle) | n/a | n/a | n/a | n/a | n/a |
+| Tap-and-hold menu: spec passes the SDK validator, ≤10 items, 32-byte labels, unique ids, no exit item, one Switch item per mode in cycle order; `menuActionFor` maps every id; `even.ts` filters invalid items, attaches `menuObject` at page creation, dispatches only numeric `menuItemClickEvent.itemID`; picking an item switches mode in the simulator | unit:menu + unit:even.audio (menu) + e2e:1b (Sting, then back to Date) | unit:menu (ids 0 / 999 → null) + unit:even.audio (all-invalid list sends no menuObject) | n/a | n/a | n/a | manual:hw (menu mid-session, Calibrate me from the glasses, Fresh topics refusals) |
+| Direction tag tally: finite numbers keyed as-is, null/garbage folded to `none`, role counted per key, busiest-first summary capped for the overlay, reset on startMic | unit:audio-role (direction) + unit:even.audio (direction) | unit:audio-role (NaN, Infinity, strings) | n/a | n/a | n/a | n/a |
+| What the raw direction values mean on real glasses, and whether direction alone separates a speaker across the room from the table | manual:hw (overlay `dir` line over a two-person session and one quiz night) | n/a | n/a | n/a | n/a | n/a |
 | Mock suggestion populates on tick | e2e:3 | n/a | n/a | n/a | n/a | n/a |
 | Audio capture → chunked POST | unit:transport TODO | n/a | manual:hw | manual:hw | manual:hw | manual |
 | Deepgram transcribe round-trip | manual:hw | manual:hw | manual:hw | manual:hw | n/a | manual |
@@ -27,6 +30,9 @@ Full taxonomy + discipline: `~/.claude/skills/coverage-matrix/SKILL.md`. Empty c
 | v0.6.0 speaker-role gate: `self` frames dropped only when the setting is on; `other`, `unknown` and untagged frames always delivered; tally resets per session | unit:even.audio (fake bridge) + unit:audio-role (literals pinned to the SDK enum) | unit:audio-role (garbage role → unknown) | n/a | n/a | n/a | unit:even.audio (stopMic clears source) |
 | v0.6.0 mic source: glasses first, phone when the glasses return false or throw, failure when both refuse (no frames delivered) | unit:even.audio | n/a | n/a | n/a | unit:even.audio (both refuse) | n/a |
 | Whether the Even app's `speakerRole` tag is right often enough to turn the gate on by default | manual:hw (diagnostic overlay `self/other/unk` counts over a real two-person session) | manual:hw | n/a | n/a | n/a | n/a |
+| v0.7.0 Trivia mode: registry entry with `emphasizeFirstWord=false` + `dedupeSuggestions=false`, every coaching mode keeps both true, custom keeps emphasis off; glyph ◈ exists in the font; prompt assembly drops the do-not-repeat note for trivia even when recent suggestions are passed; listing names the mode and cites `06-trivia.png` | unit:modes + unit:glyphs + unit:providers:prompt + unit:store-listing | unit:modes (flags are booleans on every mode) | n/a | n/a | n/a | n/a |
+| Mock pool is mode-scoped: trivia and custom cycle only the entries written for them, everything else cycles the full script | unit:mock (4 ticks each) | unit:mock (fallback to the full script when a mode has no entries) | n/a | n/a | n/a | n/a |
+| Trivia in the field: can the near-field glasses mic (or the phone mic on the table) hear a quiz host over a PA in a loud room well enough for Deepgram, and does the answer land inside the answer window | manual:hw (one quiz night, Custom-free; note mic source + overlay role counts) | manual:hw | n/a | n/a | n/a | n/a |
 | SDK floor: pin ≥ 0.0.16, installed = pin, `app.json` `min_sdk_version` = installed (0.0.14 / 0.0.15 re-fire timers, see KNOWN_QUIRKS) | unit:sdk-floor | unit:sdk-floor | n/a | n/a | n/a | n/a |
 | Battery glyph in header updates | manual:hw | n/a | n/a | n/a | n/a | n/a |
 | Idle auto-pause after 5 min | manual:hw | n/a | n/a | n/a | n/a | n/a |
@@ -40,9 +46,9 @@ Full taxonomy + discipline: `~/.claude/skills/coverage-matrix/SKILL.md`. Empty c
 ## By dimension (status)
 
 - **Static:** lint+tsc ✓, app-json validation ✓, network whitelist matches code TODO, secret scan TODO
-- **Unit:** 146 tests across `src/` modules — see `npm test`
+- **Unit:** 160 tests across `src/` modules — see `npm test`
 - **Integration (JSDOM):** transport/utterance flows partial; storage round-trip TODO
-- **E2E:** `scripts/regression.mjs` — privacy gate + mode cycle + mock suggestions + render-loop liveness (5 checks; `npm run sim` on simulator 0.9.5)
+- **E2E:** `scripts/regression.mjs` — privacy gate + mode cycle + menu mode switch + mock suggestions + render-loop liveness (7 checks; `npm run sim` on simulator 0.9.5)
 - **Worker integration:** `scripts/worker-test.mjs` (offline) covers Deepgram/Anthropic round-trip without burning credits per run
 - **WebKit parity:** `scripts/test-webkit.mjs` — Playwright run against iOS-WKWebView-shaped browser
 - **Hardware:** field-test log TODO (could live in PREMORTEM equivalent)

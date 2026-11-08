@@ -7,18 +7,26 @@ import {
   AudioInputSource,
   CreateStartUpPageContainer,
   EventSourceType,
+  MenuContainerProperty,
+  MenuItemProperty,
   OsEventTypeList,
   TextContainerProperty,
   TextContainerUpgrade,
+  isMenuNameWithinLimit,
+  isValidMenuItemID,
   waitForEvenAppBridge,
 } from '@evenrealities/even_hub_sdk'
 import {
   type AudioFrameStats,
+  type DirectionStats,
+  directionKeyOf,
   emptyAudioStats,
   shouldDeliver,
   speakerRoleOf,
+  tallyDirection,
   tallyFrame,
 } from './audio-role'
+import type { MenuSpec } from './menu'
 
 // Audio frame from the SDK's mic capture. Per the SDK README, audio comes
 // as PCM bytes — assumed 16kHz mono 16-bit little-endian (industry-standard
@@ -47,6 +55,9 @@ export interface EvenRuntime {
   onSwipe: (handler: (dir: SwipeDir, source: InputSource) => void) => void
   onDoubleTap: (handler: (source: InputSource) => void) => void
   onForeground: (handler: () => void) => void
+  // Contextual menu (tap-and-hold) selection, by the MenuSpec id passed to
+  // connectEvenRuntime.
+  onMenuSelect: (handler: (itemID: number) => void) => void
   // Mic capture. Calling startMic emits PCM frames to the registered handler
   // until stopMic. Caller is responsible for routing frames to STT.
   startMic: (handler: (frame: AudioFrame) => void, opts?: MicOptions) => Promise<boolean>
@@ -55,6 +66,8 @@ export interface EvenRuntime {
   getMicSource: () => MicSource | null
   // Per-session frame tally by speaker role, reset on every startMic.
   getAudioStats: () => AudioFrameStats
+  // Per-session raw direction tag × role tally, reset on every startMic.
+  getDirectionStats: () => DirectionStats
   exitApp: () => Promise<void>
   getStorage: (key: string) => Promise<string>
   setStorage: (key: string, value: string) => Promise<boolean>
@@ -77,13 +90,30 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   })
 }
 
-export async function connectEvenRuntime(initial: string): Promise<EvenRuntime | null> {
+export async function connectEvenRuntime(
+  initial: string,
+  menu: readonly MenuSpec[] = [],
+): Promise<EvenRuntime | null> {
   let bridge: Awaited<ReturnType<typeof waitForEvenAppBridge>>
   try {
     bridge = await withTimeout(waitForEvenAppBridge(), BRIDGE_TIMEOUT_MS)
   } catch {
     return null
   }
+
+  // A malformed menu makes the firmware reject the whole page, so entries
+  // are filtered through the SDK's own predicates before they are sent.
+  const seen = new Set<number>()
+  const menuItems = menu.filter(m => {
+    const ok = isValidMenuItemID(m.id) && isMenuNameWithinLimit(m.label) && !seen.has(m.id)
+    seen.add(m.id)
+    return ok
+  })
+  const menuObject = menuItems.length > 0
+    ? new MenuContainerProperty({
+      menuItems: menuItems.map(m => new MenuItemProperty({ itemName: m.label, itemID: m.id })),
+    })
+    : undefined
 
   const main = new TextContainerProperty({
     xPosition: 0,
@@ -100,7 +130,7 @@ export async function connectEvenRuntime(initial: string): Promise<EvenRuntime |
   })
 
   const created = await bridge.createStartUpPageContainer(
-    new CreateStartUpPageContainer({ containerTotalNum: 1, textObject: [main] }),
+    new CreateStartUpPageContainer({ containerTotalNum: 1, textObject: [main], menuObject }),
   )
   if (created !== 0) return null
 
@@ -118,10 +148,12 @@ export async function connectEvenRuntime(initial: string): Promise<EvenRuntime |
   let swipeHandler: ((dir: SwipeDir, source: InputSource) => void) | null = null
   let doubleTapHandler: ((source: InputSource) => void) | null = null
   let foregroundHandler: (() => void) | null = null
+  let menuHandler: ((itemID: number) => void) | null = null
   let audioHandler: ((frame: AudioFrame) => void) | null = null
   let dropSelf = false
   let micSource: MicSource | null = null
   let audioStats = emptyAudioStats()
+  let directionStats: DirectionStats = new Map()
   // Latest battery push from onDeviceStatusChanged. Push beats poll for
   // freshness and avoids hitting BLE on every tick.
   let cachedBattery: number | undefined
@@ -153,13 +185,19 @@ export async function connectEvenRuntime(initial: string): Promise<EvenRuntime |
     // speaker-role guess. Raw bytes go to the registered handler; the
     // transport layer shapes them into Deepgram's expected encoding.
     const audioEvent = (event as {
-      audioEvent?: { audioPcm?: Uint8Array; speakerRole?: unknown }
+      audioEvent?: { audioPcm?: Uint8Array; speakerRole?: unknown; direction?: unknown }
     }).audioEvent
     if (audioEvent?.audioPcm) {
       const role = speakerRoleOf(audioEvent.speakerRole)
       const deliver = shouldDeliver(role, dropSelf)
       tallyFrame(audioStats, role, deliver)
+      tallyDirection(directionStats, directionKeyOf(audioEvent.direction), role)
       if (deliver && audioHandler) audioHandler(audioEvent.audioPcm)
+      return
+    }
+    const menuClick = (event as { menuItemClickEvent?: { itemID?: unknown } }).menuItemClickEvent
+    if (menuClick) {
+      if (typeof menuClick.itemID === 'number') menuHandler?.(menuClick.itemID)
       return
     }
     if (event.textEvent) {
@@ -198,10 +236,12 @@ export async function connectEvenRuntime(initial: string): Promise<EvenRuntime |
     onSwipe(h) { swipeHandler = h },
     onDoubleTap(h) { doubleTapHandler = h },
     onForeground(h) { foregroundHandler = h },
+    onMenuSelect(h) { menuHandler = h },
     async startMic(handler, opts) {
       audioHandler = handler
       dropSelf = opts?.dropSelf ?? false
       audioStats = emptyAudioStats()
+      directionStats = new Map()
       micSource = null
       // The glasses mic is the default. A false return there (glasses not
       // connected) falls back to the phone mic, which has no speaker tags.
@@ -227,6 +267,7 @@ export async function connectEvenRuntime(initial: string): Promise<EvenRuntime |
     },
     getMicSource() { return micSource },
     getAudioStats() { return { ...audioStats } },
+    getDirectionStats() { return directionStats },
     async exitApp(): Promise<void> { await bridge.shutDownPageContainer(1) },
     async getStorage(key) {
       try { return await bridge.getLocalStorage(key) } catch { return '' }
