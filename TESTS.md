@@ -1,6 +1,6 @@
-# TESTS — coverage matrix (Cue v0.7.0)
+# TESTS — coverage matrix (Cue v0.8.0)
 
-Last updated: 2026-11-08 (v0.7.0 Trivia mode, tap-and-hold menu, direction tally on the overlay).
+Last updated: 2026-11-09 (v0.8.0 wearer attribution from the Even speaker tag).
 
 Full taxonomy + discipline: `~/.claude/skills/coverage-matrix/SKILL.md`. Empty cells block the next ship. `/ship-app` blocks if this file has unfilled cells.
 
@@ -15,6 +15,10 @@ Full taxonomy + discipline: `~/.claude/skills/coverage-matrix/SKILL.md`. Empty c
 | Tap-and-hold menu: spec passes the SDK validator, ≤10 items, 32-byte labels, unique ids, no exit item, one Switch item per mode in cycle order; `menuActionFor` maps every id; `even.ts` filters invalid items, attaches `menuObject` at page creation, dispatches only numeric `menuItemClickEvent.itemID`; picking an item switches mode in the simulator | unit:menu + unit:even.audio (menu) + e2e:1b (Sting, then back to Date) | unit:menu (ids 0 / 999 → null) + unit:even.audio (all-invalid list sends no menuObject) | n/a | n/a | n/a | manual:hw (menu mid-session, Calibrate me from the glasses, Fresh topics refusals) |
 | Direction tag tally: finite numbers keyed as-is, null/garbage folded to `none`, role counted per key, busiest-first summary capped for the overlay, reset on startMic | unit:audio-role (direction) + unit:even.audio (direction) | unit:audio-role (NaN, Infinity, strings) | n/a | n/a | n/a | n/a |
 | What the raw direction values mean on real glasses, and whether direction alone separates a speaker across the room from the table | manual:hw (overlay `dir` line over a two-person session and one quiz night) | n/a | n/a | n/a | n/a | n/a |
+| v0.8.0 attribution: role spans × utterance window → self share ≥ 0.6 of ≥ 300 ms tagged = wearer; untimed utterance judged on the whole chunk; phone mic (all unknown), no spans, or too little tagged audio → abstain; threshold exact at the boundary; verdict counters + overlay line | unit:attribution (12) | unit:attribution (reversed / missing end, empty window) | n/a | n/a | n/a | n/a |
+| v0.8.0 plumbing: `even.ts` hands the role to the frame handler; `transport.ts` records ms spans per chunk (same-role runs merge, untagged defaults to unknown, fresh list per chunk, `chunkMs` from bytes) and maps Worker / direct `start`/`end` seconds to `startMs`/`endMs` (absent when missing); `appendTurn` keeps the `wearer` flag and never merges across verdicts | unit:even.audio + unit:transport (3) + unit:providers:transcribe + unit:conversation (2) | unit:transport (timing absent) | n/a | n/a | n/a | n/a |
+| v0.8.0 end to end on the fake bridge: self-tagged frames mark the utterance "(you)" and keep it out of `/suggest` with the picker unset; the tag beats a wrong picker across two chunks whose ids both start at 0; setting off → tag ignored; untagged frames fall back to the picker (the v0.4 tests) | integration:audio.bridge (3 new + 2 existing) | integration:audio.bridge (setting off) | n/a | n/a | n/a | n/a |
+| Whether the Even tag's 60 % / 300 ms rule attributes real utterances correctly, and how often it abstains, in a two-person session | manual:hw (overlay `who` counts vs. what was actually said; note mic source) | manual:hw | n/a | n/a | n/a | n/a |
 | Mock suggestion populates on tick | e2e:3 | n/a | n/a | n/a | n/a | n/a |
 | Audio capture → chunked POST | unit:transport TODO | n/a | manual:hw | manual:hw | manual:hw | manual |
 | Deepgram transcribe round-trip | manual:hw | manual:hw | manual:hw | manual:hw | n/a | manual |
@@ -46,8 +50,8 @@ Full taxonomy + discipline: `~/.claude/skills/coverage-matrix/SKILL.md`. Empty c
 ## By dimension (status)
 
 - **Static:** lint+tsc ✓, app-json validation ✓, network whitelist matches code TODO, secret scan TODO
-- **Unit:** 160 tests across `src/` modules — see `npm test`
-- **Integration (JSDOM):** transport/utterance flows partial; storage round-trip TODO
+- **Unit:** 178 tests across `src/` modules — see `npm test`
+- **Integration (JSDOM):** `tests/audio.bridge.test.ts` drives real-mode sessions through the fake bridge and a mocked Worker (tag attribution, picker fallback, calibrate, trailing flush); storage round-trip TODO
 - **E2E:** `scripts/regression.mjs` — privacy gate + mode cycle + menu mode switch + mock suggestions + render-loop liveness (7 checks; `npm run sim` on simulator 0.9.5)
 - **Worker integration:** `scripts/worker-test.mjs` (offline) covers Deepgram/Anthropic round-trip without burning credits per run
 - **WebKit parity:** `scripts/test-webkit.mjs` — Playwright run against iOS-WKWebView-shaped browser

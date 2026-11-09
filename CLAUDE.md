@@ -15,7 +15,7 @@ npm run dev                   # Vite on :5176 (host 0.0.0.0 for LAN)
 npm run build                 # tsc + vite build → dist/
 npm run pack                  # lint-app-json + evenhub pack → cue.ehpk
 npm run deploy                # build + pack
-npm test                      # vitest (160 tests)
+npm test                      # vitest (178 tests)
 npm run sim                   # simulator on :9897 (launched by path; npx evenhub-simulator 404s)
 npm run test:e2e              # simulator regression, needs dev + sim running
 npm run test:webkit           # Playwright/WebKit harness for iOS-WKWebView parity
@@ -27,7 +27,7 @@ npx evenhub qr --url http://<lan-ip>:5176   # QR for real-glasses hot reload
 
 Three layers talk to each other:
 
-1. **Plugin (this repo).** TypeScript + Vite SPA that runs in WKWebView in the Even Realities companion app on the phone. `src/main.ts` owns the state machine, `src/even.ts` wraps the glasses bridge, `src/transport.ts` handles audio chunking over two backends (`src/providers.ts` direct-to-provider, or the Worker; keys win, then Worker, then mock), `src/utterance.ts` holds pure heuristics (end-of-utterance trigger, sentence-aware trim, conversation accumulation, speaker labels), `src/modes.ts` is the mode registry.
+1. **Plugin (this repo).** TypeScript + Vite SPA that runs in WKWebView in the Even Realities companion app on the phone. `src/main.ts` owns the state machine, `src/even.ts` wraps the glasses bridge, `src/transport.ts` handles audio chunking over two backends (`src/providers.ts` direct-to-provider, or the Worker; keys win, then Worker, then mock), `src/utterance.ts` holds pure heuristics (end-of-utterance trigger, sentence-aware trim, conversation accumulation, speaker labels), `src/attribution.ts` decides who spoke each utterance from the Even speaker-role spans the transport records per chunk, `src/modes.ts` is the mode registry.
 
 2. **Worker (in `worker-template/`).** Personal Cloudflare Worker the user deploys with their own Deepgram + Anthropic/OpenAI keys. Endpoints: `POST /transcribe` (audio → JSON `{text, utterances}`), `POST /suggest` (transcript → JSON `{suggestions[]}`), `GET /healthz`, `GET /ws` (WebSocket — vestigial, see KNOWN_QUIRKS). Logs every request via `console.log` for `wrangler tail` debugging.
 
@@ -38,8 +38,9 @@ Three layers talk to each other:
 - **`new WebSocket()` fails silently in WKWebView** — that's why we use chunked HTTP POST instead of streaming. The 2.5s chunk latency is a platform floor, not a code issue. Never reintroduce the WebSocket path on the plugin side; the Worker can use Deepgram WS server-side.
 - **`bridge.audioControl(true)` returns truthy regardless of mic permission** — count audio frames as the real signal, not the call's return value.
 - **Concurrent `textContainerUpgrade` calls crash the BLE link** — render is serialized through `enqueue()` in `src/even.ts`. Don't bypass.
-- **The wearer's voice gets transcribed too.** v0.4.0 added Deepgram diarization (`diarize=true&utterances=true`) so the plugin can label speakers `[A]/[B]/etc` and exclude the wearer's lines from the suggestion-prompt context. Configure via phone-side "Which speaker is you?" dropdown.
-- **`speakerRole` is the Even app's guess, not a firmware fact.** v0.6.0 drops `self` frames only behind the default-off "Skip my own voice" setting, and the diagnostic overlay prints `self/other/unk/dropped` counts so the heuristic can be judged before the default changes. Never make the gate unconditional.
+- **The wearer's voice gets transcribed too.** v0.4.0 added Deepgram diarization (`diarize=true&utterances=true`) so the plugin can label speakers `[A]/[B]/etc` and exclude the wearer's lines from the suggestion-prompt context.
+- **Deepgram speaker ids restart in every chunk.** Each 2.5 s chunk is a separate batch request, so speaker 0 is whoever spoke first in that chunk, never a person. That is why v0.8.0 attributes utterances from the Even `speakerRole` spans (`src/attribution.ts`: `even.ts` passes the role with each frame, `transport.ts` records ms spans per chunk and parses utterance `start`/`end`, `main.ts` marks a turn `wearer` when ≥60 % of ≥300 ms tagged audio under it is self). The phone-side "Which speaker is you?" picker and Calibrate me are only the fallback for utterances the tag cannot place. Never merge conversation turns across differing `wearer` verdicts.
+- **`speakerRole` is the Even app's guess, not a firmware fact.** v0.6.0 drops `self` frames only behind the default-off "Skip my own voice" setting, and the diagnostic overlay prints `self/other/unk/dropped` counts plus the v0.8.0 `who you/other/untagged` verdict counts so the heuristic can be judged before the default changes. Never make the gate unconditional.
 - **`endMicSession` previously dropped the trailing audio chunk** — fixed in v0.4.1 by passing `force=true` to the final `flush()`. If you refactor `flush()`, keep the force-flag escape hatch.
 
 ## Conventions

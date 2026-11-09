@@ -27,11 +27,17 @@ import {
   transcribeDirect, suggestDirect, buildSystemPrompt, DEEPGRAM_LISTEN_URL,
   ANTHROPIC_MESSAGES_URL, OPENAI_CHAT_URL, toArrayBuffer, type DirectKeys,
 } from './providers'
+import type { SpeakerRole } from './audio-role'
+import type { RoleSpan } from './attribution'
 
 export interface TranscriptUtterance {
-  speaker: number  // Deepgram-assigned speaker id (0, 1, 2, ...)
+  speaker: number  // Deepgram-assigned speaker id (0, 1, 2, ...), numbered afresh in every chunk
   text: string
   confidence: number
+  // v0.8.0: position inside the chunk, from Deepgram's utterance start/end.
+  // Absent when the backend did not return timing (older Worker).
+  startMs?: number
+  endMs?: number
 }
 
 export interface TranscriptEvent {
@@ -41,12 +47,16 @@ export interface TranscriptEvent {
   // v0.4.0: per-speaker turns within the chunk. Empty array if Deepgram
   // returned no utterances field (older worker, single-speaker chunk, etc).
   utterances: TranscriptUtterance[]
+  // v0.8.0: the Even speaker-role tag of every frame in the chunk, as
+  // ms spans, so attribution.ts can say who spoke each utterance.
+  roles: RoleSpan[]
+  chunkMs: number
 }
 
 export interface CueTransport {
   ready: boolean
   startMicSession: (onTranscript: (e: TranscriptEvent) => void, onError: (msg: string) => void) => Promise<void>
-  sendAudioFrame: (frame: Uint8Array) => void
+  sendAudioFrame: (frame: Uint8Array, role?: SpeakerRole) => void
   endMicSession: () => Promise<void>
   requestSuggestions: (params: {
     mode: string
@@ -101,6 +111,7 @@ function explainHttp(status: number, body: string): string {
 // /suggest step debounces at 6s anyway.
 const SAMPLE_RATE = 16000
 const BYTES_PER_SECOND = SAMPLE_RATE * 2 // 16-bit mono
+const BYTES_PER_MS = BYTES_PER_SECOND / 1000
 const CHUNK_MS = 2500
 const CHUNK_BYTES = Math.round((BYTES_PER_SECOND * CHUNK_MS) / 1000)
 const MIN_CHUNK_BYTES = Math.round(BYTES_PER_SECOND * 0.5) // 500ms — below this, skip the call
@@ -119,6 +130,13 @@ interface TransportBackend {
   >
   suggest(params: { mode: string; transcript: string; customPrompt?: string; recentSuggestions?: string[] }):
     Promise<{ ok: true; suggestions: string[] } | { ok: false; error: string }>
+}
+
+// Deepgram reports utterance start/end in seconds from the top of the
+// audio it was sent, i.e. of the chunk. Both fields or neither.
+export function secondsToMs(start: unknown, end: unknown): { startMs?: number; endMs?: number } {
+  if (typeof start !== 'number' || typeof end !== 'number' || !Number.isFinite(start) || !Number.isFinite(end)) return {}
+  return { startMs: Math.round(start * 1000), endMs: Math.round(end * 1000) }
 }
 
 function workerBackend(workerUrl: string, bearerToken: string): TransportBackend {
@@ -160,7 +178,7 @@ function workerBackend(workerUrl: string, bearerToken: string): TransportBackend
         ok: boolean
         text?: string
         error?: string
-        utterances?: Array<{ speaker?: number; text?: string; confidence?: number }>
+        utterances?: Array<{ speaker?: number; text?: string; confidence?: number; start?: number; end?: number }>
       }
       if (!json.ok) return { ok: false, status: resp.status, error: json.error ?? 'transcribe failed' }
       const utterances: TranscriptUtterance[] = (json.utterances ?? [])
@@ -168,6 +186,7 @@ function workerBackend(workerUrl: string, bearerToken: string): TransportBackend
           speaker: typeof u.speaker === 'number' ? u.speaker : 0,
           text: (u.text ?? '').trim(),
           confidence: typeof u.confidence === 'number' ? u.confidence : 0,
+          ...secondsToMs(u.start, u.end),
         }))
         .filter(u => u.text.length > 0)
       return { ok: true, text: (json.text ?? '').trim(), utterances }
@@ -255,6 +274,10 @@ function createChunkedTransport(backend: TransportBackend, notReadyMessage: stri
   let onTranscriptCb: ((e: TranscriptEvent) => void) | null = null
   let onErrorCb: ((msg: string) => void) | null = null
   let pending = new Uint8Array(0)
+  // Speaker-role tag per stretch of `pending`, in ms from its start.
+  // Consecutive same-role frames extend one span, so a 2.5 s chunk is
+  // usually one to three entries.
+  let pendingSpans: RoleSpan[] = []
   let inFlight = false
   let active = false
   // Diagnostic counters — surface via stats() so the UI can show whether
@@ -280,7 +303,10 @@ function createChunkedTransport(backend: TransportBackend, notReadyMessage: stri
     inFlight = true
     chunksFlushed += 1
     const chunk = pending
+    const roles = pendingSpans
+    const chunkMs = chunk.byteLength / BYTES_PER_MS
     pending = new Uint8Array(0)
+    pendingSpans = []
     const url = backend.transcribeUrl
     const startedAt = Date.now()
     try {
@@ -306,7 +332,7 @@ function createChunkedTransport(backend: TransportBackend, notReadyMessage: stri
         status: 200, ms: Date.now() - startedAt, ok: true, bytes: chunk.byteLength,
       })
       if (result.text && onTranscriptCb) {
-        onTranscriptCb({ type: 'transcript', text: result.text, isFinal: true, utterances: result.utterances })
+        onTranscriptCb({ type: 'transcript', text: result.text, isFinal: true, utterances: result.utterances, roles, chunkMs })
       }
     } catch (err) {
       // Backends return errors rather than throwing; this is the last line
@@ -334,13 +360,19 @@ function createChunkedTransport(backend: TransportBackend, notReadyMessage: stri
       onTranscriptCb = onTranscript
       onErrorCb = onError
       pending = new Uint8Array(0)
+      pendingSpans = []
       inFlight = false
       active = true
     },
-    sendAudioFrame(frame) {
+    sendAudioFrame(frame, role = 'unknown') {
       if (!active) return
       framesReceived += 1
       bytesReceived += frame.byteLength
+      const startMs = pending.byteLength / BYTES_PER_MS
+      const endMs = startMs + frame.byteLength / BYTES_PER_MS
+      const lastSpan = pendingSpans[pendingSpans.length - 1]
+      if (lastSpan && lastSpan.role === role) lastSpan.endMs = endMs
+      else pendingSpans.push({ startMs, endMs, role })
       // Accumulate. Each incoming frame is small (~10-40ms typically); we
       // append until we hit CHUNK_BYTES, then trigger an async flush.
       const merged = new Uint8Array(pending.byteLength + frame.byteLength)

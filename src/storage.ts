@@ -54,6 +54,10 @@ const KEY_WEARER_SPEAKER_ID = 'cue:wearer-speaker-id:v1'
 // v0.6.0: drop frames the Even app tags as the wearer before STT. Default
 // OFF until the app's direction heuristic is judged in the field.
 const KEY_DROP_SELF_AUDIO = 'cue:drop-self-audio:v1'
+// v0.8.0: decide who spoke each utterance from the Even speaker tag.
+// Default ON; the Deepgram speaker picker is the fallback when the tag
+// is absent (phone mic) or this is off.
+const KEY_AUTO_WEARER = 'cue:auto-wearer:v1'
 // v0.5.0: bring-your-own keys for the direct-to-provider path. Stored in the
 // same per-app bridge storage as the Worker secret: on the phone, nowhere else.
 const KEY_DEEPGRAM_KEY = 'cue:deepgram-key:v1'
@@ -135,6 +139,15 @@ export async function getDropSelfAudio(): Promise<boolean> {
 
 export async function setDropSelfAudio(on: boolean): Promise<void> {
   await writeRaw(KEY_DROP_SELF_AUDIO, on ? '1' : '0')
+}
+
+export async function getAutoWearer(): Promise<boolean> {
+  const raw = await readRaw(KEY_AUTO_WEARER)
+  return raw === null ? true : raw === '1'
+}
+
+export async function setAutoWearer(on: boolean): Promise<void> {
+  await writeRaw(KEY_AUTO_WEARER, on ? '1' : '0')
 }
 
 // Wearer speaker id: -1 = none / auto-detect (no filter), 0+ = anchor.

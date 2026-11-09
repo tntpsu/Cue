@@ -56,9 +56,9 @@ describe('transcribeDirect', () => {
       results: {
         channels: [{ alternatives: [{ transcript: 'hello there  ' }] }],
         utterances: [
-          { speaker: 0, transcript: 'hello', confidence: 0.9 },
+          { speaker: 0, transcript: 'hello', confidence: 0.9, start: 0.12, end: 0.8 },
           { speaker: 1, transcript: '   ', confidence: 0.5 },
-          { transcript: 'there' },
+          { transcript: 'there', start: 1.0 },
         ],
       },
     }))
@@ -72,7 +72,7 @@ describe('transcribeDirect', () => {
     expect(headers['Content-Type']).toBe('audio/wav')
     expect((calls[0]!.init!.body as Blob).size).toBe(44 + 3200)
     expect(r).toEqual({ ok: true, text: 'hello there', utterances: [
-      { speaker: 0, text: 'hello', confidence: 0.9 },
+      { speaker: 0, text: 'hello', confidence: 0.9, startMs: 120, endMs: 800 },
       { speaker: 0, text: 'there', confidence: 0 },
     ] })
   })

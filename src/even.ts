@@ -19,6 +19,7 @@ import {
 import {
   type AudioFrameStats,
   type DirectionStats,
+  type SpeakerRole,
   directionKeyOf,
   emptyAudioStats,
   shouldDeliver,
@@ -58,9 +59,10 @@ export interface EvenRuntime {
   // Contextual menu (tap-and-hold) selection, by the MenuSpec id passed to
   // connectEvenRuntime.
   onMenuSelect: (handler: (itemID: number) => void) => void
-  // Mic capture. Calling startMic emits PCM frames to the registered handler
-  // until stopMic. Caller is responsible for routing frames to STT.
-  startMic: (handler: (frame: AudioFrame) => void, opts?: MicOptions) => Promise<boolean>
+  // Mic capture. Calling startMic emits PCM frames, each with the Even
+  // app's speaker-role tag, to the registered handler until stopMic.
+  // Caller is responsible for routing frames to STT.
+  startMic: (handler: (frame: AudioFrame, role: SpeakerRole) => void, opts?: MicOptions) => Promise<boolean>
   stopMic: () => Promise<void>
   // Which mic the last startMic opened, null until one succeeds.
   getMicSource: () => MicSource | null
@@ -149,7 +151,7 @@ export async function connectEvenRuntime(
   let doubleTapHandler: ((source: InputSource) => void) | null = null
   let foregroundHandler: (() => void) | null = null
   let menuHandler: ((itemID: number) => void) | null = null
-  let audioHandler: ((frame: AudioFrame) => void) | null = null
+  let audioHandler: ((frame: AudioFrame, role: SpeakerRole) => void) | null = null
   let dropSelf = false
   let micSource: MicSource | null = null
   let audioStats = emptyAudioStats()
@@ -192,7 +194,7 @@ export async function connectEvenRuntime(
       const deliver = shouldDeliver(role, dropSelf)
       tallyFrame(audioStats, role, deliver)
       tallyDirection(directionStats, directionKeyOf(audioEvent.direction), role)
-      if (deliver && audioHandler) audioHandler(audioEvent.audioPcm)
+      if (deliver && audioHandler) audioHandler(audioEvent.audioPcm, role)
       return
     }
     const menuClick = (event as { menuItemClickEvent?: { itemID?: unknown } }).menuItemClickEvent

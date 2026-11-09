@@ -118,6 +118,71 @@ describe('createTransport', () => {
     expect(captured!.text).toBe('hello there how are you')
   })
 
+  // ─── v0.8.0: speaker-role spans + utterance timing ───────────────
+  it('records the Even speaker role of each frame as ms spans on the chunk, merging runs', async () => {
+    globalThis.fetch = vi.fn(async (url: string) => {
+      if (url.includes('/healthz')) return new Response('ok', { status: 200 })
+      return new Response(JSON.stringify({ ok: true, text: 'x', utterances: [] }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      })
+    }) as unknown as typeof fetch
+    const t = createTransport('https://cue.example.workers.dev', 'secret')
+    let captured: { roles: unknown; chunkMs: number } | null = null
+    await t.startMicSession(e => { captured = { roles: e.roles, chunkMs: e.chunkMs } }, () => {})
+    // 16_000 bytes = 500 ms at 16 kHz mono 16-bit.
+    t.sendAudioFrame(new Uint8Array(16_000), 'self')
+    t.sendAudioFrame(new Uint8Array(16_000), 'self')
+    t.sendAudioFrame(new Uint8Array(16_000), 'other')
+    t.sendAudioFrame(new Uint8Array(8_000))
+    await t.endMicSession()
+    expect(captured!.chunkMs).toBe(1750)
+    expect(captured!.roles).toEqual([
+      { startMs: 0, endMs: 1000, role: 'self' },
+      { startMs: 1000, endMs: 1500, role: 'other' },
+      { startMs: 1500, endMs: 1750, role: 'unknown' },
+    ])
+  })
+
+  it('starts a fresh span list for every chunk', async () => {
+    const seen: Array<{ roles: Array<{ role: string; startMs: number }>; chunkMs: number }> = []
+    globalThis.fetch = vi.fn(async (url: string) => {
+      if (url.includes('/healthz')) return new Response('ok', { status: 200 })
+      return new Response(JSON.stringify({ ok: true, text: 'x', utterances: [] }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      })
+    }) as unknown as typeof fetch
+    const t = createTransport('https://cue.example.workers.dev', 'secret')
+    await t.startMicSession(e => { seen.push({ roles: e.roles, chunkMs: e.chunkMs }) }, () => {})
+    t.sendAudioFrame(new Uint8Array(80_000), 'other')  // exactly one chunk → auto flush
+    await new Promise(r => setTimeout(r, 20))
+    t.sendAudioFrame(new Uint8Array(32_000), 'self')
+    await t.endMicSession()
+    expect(seen).toHaveLength(2)
+    expect(seen[0]!.roles).toEqual([{ startMs: 0, endMs: 2500, role: 'other' }])
+    expect(seen[1]!.roles).toEqual([{ startMs: 0, endMs: 1000, role: 'self' }])
+  })
+
+  it('maps Worker utterance start/end seconds to startMs/endMs, leaving them off when absent', async () => {
+    globalThis.fetch = vi.fn(async (url: string) => {
+      if (url.includes('/healthz')) return new Response('ok', { status: 200 })
+      return new Response(JSON.stringify({
+        ok: true,
+        text: 'hello there how are you',
+        utterances: [
+          { speaker: 0, text: 'hello there', confidence: 0.95, start: 0.21, end: 1.04 },
+          { speaker: 1, text: 'how are you', confidence: 0.91 },
+        ],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }) as unknown as typeof fetch
+    const t = createTransport('https://cue.example.workers.dev', 'secret')
+    let captured: Array<Record<string, unknown>> = []
+    await t.startMicSession(e => { captured = e.utterances as Array<Record<string, unknown>> }, () => {})
+    t.sendAudioFrame(new Uint8Array(20_000))
+    await t.endMicSession()
+    expect(captured[0]).toEqual({ speaker: 0, text: 'hello there', confidence: 0.95, startMs: 210, endMs: 1040 })
+    expect(captured[1]).toEqual({ speaker: 1, text: 'how are you', confidence: 0.91 })
+  })
+
   it('handles missing utterances field (back-compat with older worker)', async () => {
     const fetchSpy = vi.fn(async (url: string) => {
       if (typeof url === 'string' && url.includes('/healthz')) {

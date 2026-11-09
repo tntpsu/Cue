@@ -160,6 +160,9 @@ export interface ConversationTurn {
   speaker: number
   text: string
   ts: number
+  // Decided per utterance from the Even speaker tag when available, else
+  // from the phone-side speaker picker (see main.ts onTranscriptFrame).
+  wearer: boolean
 }
 
 export interface ConversationConfig {
@@ -176,22 +179,24 @@ export const DEFAULT_CONVERSATION: ConversationConfig = {
 
 /**
  * Append a new utterance to the buffer, merging into the last turn if
- * it's the same speaker. Returns the (mutated) buffer for chaining.
+ * it's the same speaker with the same wearer verdict. Returns the
+ * (mutated) buffer for chaining.
  */
 export function appendTurn(
   buffer: ConversationTurn[],
   speaker: number,
   text: string,
   now: number,
+  wearer = false,
   cfg: ConversationConfig = DEFAULT_CONVERSATION,
 ): ConversationTurn[] {
   if (text.trim().length === 0) return buffer
   const last = buffer[buffer.length - 1]
-  if (last && last.speaker === speaker) {
+  if (last && last.speaker === speaker && last.wearer === wearer) {
     last.text = `${last.text} ${text}`.trim()
     last.ts = now
   } else {
-    buffer.push({ speaker, text: text.trim(), ts: now })
+    buffer.push({ speaker, text: text.trim(), ts: now, wearer })
   }
   return pruneTurns(buffer, now, cfg)
 }

@@ -4,6 +4,13 @@
 
 import { connectEvenRuntime, type EvenRuntime, type InputSource, type SwipeDir } from './even'
 import { summarizeDirections } from './audio-role'
+import {
+  type AttributionStats,
+  attribute,
+  emptyAttributionStats,
+  summarizeAttribution,
+  tallyAttribution,
+} from './attribution'
 import { CUE_MENU, menuActionFor } from './menu'
 import { DEFAULT_MODE, MODES, type Mode, type ModeId, modeById, nextMode } from './modes'
 import { nextMockExchange, nextMockProactiveTopics, resetMock } from './mock'
@@ -16,6 +23,7 @@ import {
   getShowDebugOverlay,
   getWearerSpeakerId,
   getDropSelfAudio,
+  getAutoWearer,
   getWorkerToken,
   getWorkerUrl,
   hasAgreedToPrivacy,
@@ -32,6 +40,7 @@ import {
   setStorageBridge,
   setWearerSpeakerId,
   setDropSelfAudio,
+  setAutoWearer,
   getDirectKeys,
   setDirectKeys,
   setWorkerToken,
@@ -104,6 +113,11 @@ let autoPausedReason = ''
 let showDebugOverlay = false  // diagnostic stats line on glasses
 let dropSelfAudio = false     // v0.6.0: glasses-side wearer frame drop
 let wearerSpeakerId = DEFAULT_WEARER_SPEAKER_ID  // -1 = none / no filter
+// v0.8.0: who spoke each utterance comes from the Even speaker tag over
+// the utterance's span; the picker above is the fallback when the tag
+// says nothing (phone mic) or this is off.
+let autoWearer = true
+let attributionStats: AttributionStats = emptyAttributionStats()
 
 // Live transport health, so a failing session is visible instead of silent.
 //
@@ -307,7 +321,13 @@ root.innerHTML = `
 
         <hr style="border: 0; border-top: 1px solid #eee; margin: .5rem 0;" />
 
-        <label>Which speaker is you?
+        <label style="display: flex; align-items: center; gap: .5rem; cursor: pointer;">
+          <input id="auto-wearer" type="checkbox" />
+          Spot my voice with the glasses' speaker tag (recommended)
+        </label>
+        <p style="color: #7b7b7b; font-size: .85em; margin: 0;">On by default. The Even app tags each audio frame as you or someone else; Cue lines that up with what Deepgram heard, so your lines show as "(you)" and stay out of the suggestion prompt without any setup. Utterances the tag cannot place fall back to the picker below. The diagnostic overlay's "who" line counts each verdict.</p>
+
+        <label>Which speaker is you? (fallback)
           <select id="wearer-speaker-id" style="padding: .35rem; margin-left: .5rem; max-width: 100%; box-sizing: border-box;">
             <option value="-1">None / auto-detect (don't filter)</option>
             <option value="0">Speaker A is me</option>
@@ -316,7 +336,7 @@ root.innerHTML = `
             <option value="3">Speaker D is me</option>
           </select>
         </label>
-        <p style="color: #7b7b7b; font-size: .85em; margin: 0;">When set, your own speech is shown but excluded from the suggestion prompt — Cue suggests responses TO the other person, not echoes of you. Watch the glasses for [A]/[B]/etc labels in a real conversation, then pick yours.</p>
+        <p style="color: #7b7b7b; font-size: .85em; margin: 0;">Used when the speaker tag is off or absent (phone mic). Deepgram numbers speakers afresh in every 2.5 s chunk, so "Speaker A" is whoever spoke first in each chunk; this is a rough filter, not an identity. Watch the glasses for [A]/[B]/etc labels, then pick yours.</p>
         <p id="wearer-status" style="color: #2a2; font-size: .85em; min-height: 1.2em; margin: 0;"></p>
 
         <button id="calibrate-me" type="button" style="padding: .35rem .7rem; cursor: pointer; max-width: 220px; margin-top: .25rem;">Calibrate me (one-tap)</button>
@@ -403,6 +423,12 @@ const wearerStatus = document.querySelector<HTMLParagraphElement>('#wearer-statu
 const calibrateBtn = document.querySelector<HTMLButtonElement>('#calibrate-me')!
 const calibrateStatus = document.querySelector<HTMLParagraphElement>('#calibrate-status')!
 const dropSelfAudioInput = document.querySelector<HTMLInputElement>('#drop-self-audio')!
+const autoWearerInput = document.querySelector<HTMLInputElement>('#auto-wearer')!
+
+autoWearerInput.addEventListener('change', async () => {
+  autoWearer = autoWearerInput.checked
+  await setAutoWearer(autoWearer)
+})
 
 dropSelfAudioInput.addEventListener('change', async () => {
   dropSelfAudio = dropSelfAudioInput.checked
@@ -552,7 +578,7 @@ function renderGlasses(): string {
   if (recent.length > 0) {
     for (const turn of recent) {
       const label = speakerLabel(turn.speaker)
-      const youMarker = turn.speaker === wearerSpeakerId ? ' (you)' : ''
+      const youMarker = turn.wearer ? ' (you)' : ''
       lines.push(trunc(`[${label}${youMarker}] ${turn.text}`, 76))
     }
   } else if (lastTranscript) {
@@ -580,6 +606,7 @@ function renderGlasses(): string {
       const a = even.getAudioStats()
       lines.push(`mic=${even.getMicSource() ?? 'none'} self=${a.self} other=${a.other} unk=${a.unknown} dropped=${a.dropped}`)
       lines.push(`dir ${summarizeDirections(even.getDirectionStats())}`)
+      lines.push(`who ${summarizeAttribution(attributionStats)}`)
     }
     if (s.lastError) {
       lines.push(`err: ${s.lastError}`)
@@ -738,6 +765,7 @@ async function startRealSession(): Promise<void> {
   if (!transport || !even) return
   liveTranscript = ''
   lastSuggestionAt = 0
+  attributionStats = emptyAttributionStats()
   // Transport now uses chunked HTTP POST instead of WebSocket (the WebView
   // blocks outbound WS handshakes — see transport.ts header comment).
   // startMicSession throws on worker-unreachable / probe-failed; per-chunk
@@ -771,8 +799,8 @@ async function startRealSession(): Promise<void> {
   }
   // Ask the SDK to start the mic. PCM frames flow into transport via
   // sendAudioFrame; transport buffers and POSTs every CHUNK_MS.
-  const ok = await even.startMic(frame => {
-    transport?.sendAudioFrame(frame)
+  const ok = await even.startMic((frame, role) => {
+    transport?.sendAudioFrame(frame, role)
   }, { dropSelf: dropSelfAudio })
   if (!ok) {
     lastTranscript = '(mic permission denied)'
@@ -802,21 +830,16 @@ function onTranscriptFrame(e: TranscriptEvent): void {
   // [A]/[B] labels and exclude the wearer's own words from the suggestion
   // prompt. Falls back to whole-chunk text when the worker / Deepgram
   // didn't return utterances (older worker or single-speaker chunk).
-  const turns = e.utterances && e.utterances.length > 0
-    ? e.utterances.map(u => ({ speaker: u.speaker, text: u.text }))
-    : (e.text.trim().length > 0 ? [{ speaker: 0, text: e.text.trim() }] : [])
-
-  // Accumulate into the conversation (same-speaker turns merge so words
-  // stream in until the speaker actually changes).
-  for (const t of turns) {
-    appendTurn(conversation, t.speaker, t.text, Date.now())
-  }
+  const raw = e.utterances && e.utterances.length > 0
+    ? e.utterances.map(u => ({ speaker: u.speaker, text: u.text, startMs: u.startMs, endMs: u.endMs }))
+    : (e.text.trim().length > 0 ? [{ speaker: 0, text: e.text.trim(), startMs: undefined, endMs: undefined }] : [])
 
   // v0.4.2 calibrate-me: if the user just tapped "Calibrate me" on the
   // phone, anchor the FIRST non-empty speaker we see as wearer + clear
-  // the one-shot flag. Persists to storage so it survives reload.
-  if (calibratingNow && turns.length > 0) {
-    const firstSpeaker = turns[0].speaker
+  // the one-shot flag. Persists to storage so it survives reload. Only
+  // matters for utterances the speaker tag cannot place.
+  if (calibratingNow && raw.length > 0) {
+    const firstSpeaker = raw[0].speaker
     wearerSpeakerId = firstSpeaker
     calibratingNow = false
     void setWearerSpeakerId(firstSpeaker)
@@ -831,12 +854,28 @@ function onTranscriptFrame(e: TranscriptEvent): void {
     setGlassesNotice(`Got it: Speaker ${speakerLabel(firstSpeaker)} is you`, 5_000)
   }
 
+  // v0.8.0: who spoke each utterance. The Even speaker tag over the
+  // utterance's span decides when it can; the picker's Deepgram id is the
+  // fallback, since those ids restart at 0 in every chunk.
+  const turns = raw.map(u => {
+    const verdict = autoWearer ? attribute(u, e.roles ?? [], e.chunkMs ?? 0) : null
+    if (verdict) tallyAttribution(attributionStats, verdict)
+    const wearer = verdict?.wearer ?? (wearerSpeakerId >= 0 && u.speaker === wearerSpeakerId)
+    return { speaker: u.speaker, text: u.text, wearer }
+  })
+
+  // Accumulate into the conversation (same-speaker turns merge so words
+  // stream in until the speaker actually changes).
+  for (const t of turns) {
+    appendTurn(conversation, t.speaker, t.text, Date.now(), t.wearer)
+  }
+
   // Build the rolling LLM-context buffer EXCLUDING the wearer's lines
   // (so suggestions are responses TO the other person, not echoes of
   // what the wearer just said).
   if (e.isFinal) {
     const otherLines = turns
-      .filter(t => wearerSpeakerId < 0 || t.speaker !== wearerSpeakerId)
+      .filter(t => !t.wearer)
       .map(t => t.text)
       .join(' ')
     if (otherLines.trim().length > 0) {
@@ -1144,6 +1183,8 @@ async function bootstrap(): Promise<void> {
   showDebugOverlayInput.checked = showDebugOverlay
   dropSelfAudio = await getDropSelfAudio()
   dropSelfAudioInput.checked = dropSelfAudio
+  autoWearer = await getAutoWearer()
+  autoWearerInput.checked = autoWearer
   wearerSpeakerId = await getWearerSpeakerId()
   wearerSpeakerSelect.value = String(wearerSpeakerId)
   calibratingNow = await getCalibrating()

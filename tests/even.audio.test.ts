@@ -60,13 +60,13 @@ async function boot(opts?: BridgeOpts) {
 }
 
 describe('speaker-role gate', () => {
-  it('delivers every role when dropSelf is off', async () => {
+  it('delivers every role when dropSelf is off, tagging each frame for the handler', async () => {
     const { fake, runtime } = await boot()
-    const got: number[] = []
-    await runtime.startMic(() => { got.push(1) })
-    fake.emit('self'); fake.emit('other'); fake.emit('unknown')
-    expect(got).toHaveLength(3)
-    expect(runtime.getAudioStats()).toEqual({ frames: 3, self: 1, other: 1, unknown: 1, dropped: 0 })
+    const got: string[] = []
+    await runtime.startMic((_frame, role) => { got.push(role) })
+    fake.emit('self'); fake.emit('other'); fake.emit('unknown'); fake.emit()
+    expect(got).toEqual(['self', 'other', 'unknown', 'unknown'])
+    expect(runtime.getAudioStats()).toEqual({ frames: 4, self: 1, other: 1, unknown: 2, dropped: 0 })
   })
 
   it('drops self frames only, when dropSelf is on', async () => {

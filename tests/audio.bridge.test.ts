@@ -29,7 +29,7 @@ interface FakeRuntime {
   onDoubleTap: (h: (src: string) => void) => void
   onForeground: (h: () => void) => void
   onMenuSelect: (h: (id: number) => void) => void
-  startMic: (h: (frame: Uint8Array) => void) => Promise<boolean>
+  startMic: (h: (frame: Uint8Array, role: string) => void) => Promise<boolean>
   stopMic: () => Promise<void>
   exitApp: () => Promise<void>
   getStorage: (k: string) => Promise<string>
@@ -48,16 +48,16 @@ interface FakeBridge {
   lastRender: () => string
   micActive: () => boolean
   /** Pump one PCM frame to whatever handler main.ts registered via even.startMic. */
-  pumpFrame: (frame: Uint8Array) => void
-  /** Pump a sequence of N frames each `bytes` long. */
-  pumpFrames: (count: number, bytes: number) => void
+  pumpFrame: (frame: Uint8Array, role?: string) => void
+  /** Pump a sequence of N frames each `bytes` long, all tagged `role` (default: untagged, as on the phone mic). */
+  pumpFrames: (count: number, bytes: number, role?: string) => void
 }
 
 function createFakeBridge(initialBattery: number | undefined = 80): FakeBridge {
   let tapHandler: ((src: string) => void) | null = null
   let doubleTapHandler: ((src: string) => void) | null = null
   let foregroundHandler: (() => void) | null = null
-  let frameHandler: ((frame: Uint8Array) => void) | null = null
+  let frameHandler: ((frame: Uint8Array, role: string) => void) | null = null
   let lastRendered = ''
   let mic = false
   const battery = initialBattery
@@ -70,7 +70,7 @@ function createFakeBridge(initialBattery: number | undefined = 80): FakeBridge {
     onDoubleTap: h => { doubleTapHandler = h },
     onForeground: h => { foregroundHandler = h },
     onMenuSelect: () => {},
-    startMic: async (h: (frame: Uint8Array) => void) => {
+    startMic: async (h: (frame: Uint8Array, role: string) => void) => {
       mic = true
       frameHandler = h
       return true
@@ -91,13 +91,13 @@ function createFakeBridge(initialBattery: number | undefined = 80): FakeBridge {
     invokeForeground: () => foregroundHandler?.(),
     lastRender: () => lastRendered,
     micActive: () => mic,
-    pumpFrame: (frame: Uint8Array) => frameHandler?.(frame),
-    pumpFrames: (count: number, bytes: number) => {
+    pumpFrame: (frame: Uint8Array, role = 'unknown') => frameHandler?.(frame, role),
+    pumpFrames: (count: number, bytes: number, role = 'unknown') => {
       for (let i = 0; i < count; i++) {
         // Deterministic non-zero bytes so any byte-count assertion is meaningful.
         const f = new Uint8Array(bytes)
         for (let j = 0; j < bytes; j++) f[j] = (i + j) & 0xff
-        frameHandler?.(f)
+        frameHandler?.(f, role)
       }
     },
   }
@@ -105,7 +105,7 @@ function createFakeBridge(initialBattery: number | undefined = 80): FakeBridge {
 
 interface FakeFetchOpts {
   /** Per-call utterances to return in order. After exhausted, returns text-only. */
-  utterancesQueue?: Array<Array<{ speaker: number; text: string; confidence?: number }>>
+  utterancesQueue?: Array<Array<{ speaker: number; text: string; confidence?: number; start?: number; end?: number }>>
   /** Suggestions to return on /suggest. Defaults to a static triple. */
   suggestions?: string[]
   /** Captures every transcribe + suggest call so tests can assert. */
@@ -257,6 +257,8 @@ describe('Cue audio pipeline (fake bridge + mocked worker)', () => {
     expect(out).toMatch(/\[B\] pretty good/)
   })
 
+  // Frames pumped without a role are untagged, as on the phone mic, so the
+  // picker's Deepgram id decides here. The v0.8.0 tests below cover the tag.
   it('marks the wearer with "(you)" and excludes wearer text from /suggest transcript', async () => {
     const calls: FakeFetchOpts['calls'] = []
     installFakeFetch({
@@ -320,6 +322,100 @@ describe('Cue audio pipeline (fake bridge + mocked worker)', () => {
     await new Promise(r => setTimeout(r, 80))
     const after = calls!.filter(c => c.url.endsWith('/transcribe')).length
     expect(after).toBe(1)
+  })
+
+  it('v0.8.0: the Even speaker tag marks the wearer with no picker set', async () => {
+    const calls: FakeFetchOpts['calls'] = []
+    installFakeFetch({
+      calls,
+      utterancesQueue: [
+        [
+          // Deepgram timing inside the 2.5 s chunk: first half self-tagged, second half other.
+          { speaker: 0, text: 'I had a long day', start: 0.1, end: 1.1 },
+          { speaker: 1, text: 'tell me about the meeting', start: 1.4, end: 2.4 },
+        ],
+      ],
+    })
+    await bootMocked({
+      'cue:privacy-agreed:v1': '1',
+      'cue:worker-url:v1': 'https://cue-test.workers.dev',
+      'cue:worker-token:v1': 'test-bearer',
+      'cue:wearer-speaker-id:v1': '-1',  // picker unset: only the tag can say who is who
+    })
+    fake.invokeTap('glasses')
+    await new Promise(r => setTimeout(r, 50))
+    // 10_000 bytes = 312.5 ms per frame; the chunk flushes at 80_000 bytes.
+    fake.pumpFrames(4, 10_000, 'self')
+    fake.pumpFrames(6, 10_000, 'other')
+    await new Promise(r => setTimeout(r, 200))
+
+    const out = fake.lastRender()
+    expect(out).toMatch(/\[A \(you\)\] I had a long day/)
+    expect(out).toMatch(/\[B\] tell me about the meeting/)
+    const suggestCalls = calls!.filter(c => c.url.endsWith('/suggest'))
+    expect(suggestCalls.length).toBeGreaterThanOrEqual(1)
+    const transcript = (suggestCalls[suggestCalls.length - 1]!.body as { transcript: string }).transcript
+    expect(transcript).not.toMatch(/I had a long day/)
+    expect(transcript).toMatch(/tell me about the meeting/)
+  })
+
+  it('v0.8.0: the tag beats a wrong picker, and ids that restart per chunk do not confuse it', async () => {
+    const calls: FakeFetchOpts['calls'] = []
+    installFakeFetch({
+      calls,
+      utterancesQueue: [
+        // Chunk 1: the other person spoke first, so they are speaker 0 here.
+        [{ speaker: 0, text: 'how was the meeting', start: 0.1, end: 2.3 }],
+        // Chunk 2: the wearer spoke first, so the wearer is speaker 0 here.
+        [{ speaker: 0, text: 'it ran long again', start: 0.1, end: 2.3 }],
+      ],
+    })
+    await bootMocked({
+      'cue:privacy-agreed:v1': '1',
+      'cue:worker-url:v1': 'https://cue-test.workers.dev',
+      'cue:worker-token:v1': 'test-bearer',
+      'cue:wearer-speaker-id:v1': '0',  // picker says A is me: wrong for chunk 1
+    })
+    fake.invokeTap('glasses')
+    await new Promise(r => setTimeout(r, 50))
+    fake.pumpFrames(8, 10_000, 'other')
+    await new Promise(r => setTimeout(r, 120))
+    fake.pumpFrames(8, 10_000, 'self')
+    await new Promise(r => setTimeout(r, 200))
+
+    const out = fake.lastRender()
+    expect(out).toMatch(/\[A\] how was the meeting/)
+    expect(out).toMatch(/\[A \(you\)\] it ran long again/)
+    const suggestCalls = calls!.filter(c => c.url.endsWith('/suggest'))
+    expect(suggestCalls.length).toBeGreaterThanOrEqual(1)
+    const transcript = (suggestCalls[suggestCalls.length - 1]!.body as { transcript: string }).transcript
+    expect(transcript).toMatch(/how was the meeting/)
+    expect(transcript).not.toMatch(/it ran long again/)
+  })
+
+  it('v0.8.0: with the tag setting off, self-tagged frames change nothing', async () => {
+    const calls: FakeFetchOpts['calls'] = []
+    installFakeFetch({
+      calls,
+      utterancesQueue: [[{ speaker: 0, text: 'I had a long day today', start: 0.1, end: 2.3 }]],
+    })
+    await bootMocked({
+      'cue:privacy-agreed:v1': '1',
+      'cue:worker-url:v1': 'https://cue-test.workers.dev',
+      'cue:worker-token:v1': 'test-bearer',
+      'cue:wearer-speaker-id:v1': '-1',
+      'cue:auto-wearer:v1': '0',
+    })
+    fake.invokeTap('glasses')
+    await new Promise(r => setTimeout(r, 50))
+    fake.pumpFrames(10, 10_000, 'self')
+    await new Promise(r => setTimeout(r, 200))
+
+    expect(fake.lastRender()).toMatch(/\[A\] I had a long day today/)
+    const suggestCalls = calls!.filter(c => c.url.endsWith('/suggest'))
+    expect(suggestCalls.length).toBeGreaterThanOrEqual(1)
+    const transcript = (suggestCalls[suggestCalls.length - 1]!.body as { transcript: string }).transcript
+    expect(transcript).toMatch(/I had a long day today/)
   })
 
   it('calibrate-me anchors wearer to first detected speaker', async () => {

@@ -45,7 +45,7 @@ export const SAMPLE_RATE = 16000
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
 
-export interface DirectUtterance { speaker: number; text: string; confidence: number }
+export interface DirectUtterance { speaker: number; text: string; confidence: number; startMs?: number; endMs?: number }
 export type TranscribeResult =
   | { ok: true; text: string; utterances: DirectUtterance[] }
   | { ok: false; status: number | null; error: string }
@@ -108,6 +108,12 @@ export function explainProviderHttp(kind: KeyKind, status: number, body: string)
   return `${who} HTTP ${status}: ${body.slice(0, 120)}`
 }
 
+// Deepgram times utterances in seconds from the start of the chunk.
+function utteranceTiming(start: unknown, end: unknown): { startMs?: number; endMs?: number } {
+  if (typeof start !== 'number' || typeof end !== 'number' || !Number.isFinite(start) || !Number.isFinite(end)) return {}
+  return { startMs: Math.round(start * 1000), endMs: Math.round(end * 1000) }
+}
+
 export async function transcribeDirect(
   pcm: Uint8Array,
   deepgramKey: string,
@@ -127,7 +133,7 @@ export async function transcribeDirect(
     const json = (await resp.json()) as {
       results?: {
         channels?: Array<{ alternatives?: Array<{ transcript?: string }> }>
-        utterances?: Array<{ speaker?: number; transcript?: string; confidence?: number }>
+        utterances?: Array<{ speaker?: number; transcript?: string; confidence?: number; start?: number; end?: number }>
       }
     }
     const text = (json.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? '').trim()
@@ -136,6 +142,7 @@ export async function transcribeDirect(
         speaker: typeof u.speaker === 'number' ? u.speaker : 0,
         text: (u.transcript ?? '').trim(),
         confidence: typeof u.confidence === 'number' ? u.confidence : 0,
+        ...utteranceTiming(u.start, u.end),
       }))
       .filter(u => u.text.length > 0)
     return { ok: true, text, utterances }

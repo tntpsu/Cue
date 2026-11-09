@@ -132,6 +132,8 @@ async function handleTranscribe(request: Request, env: Env): Promise<Response> {
       speaker: typeof u.speaker === 'number' ? u.speaker : 0,
       text: (u.transcript ?? '').trim(),
       confidence: typeof u.confidence === 'number' ? u.confidence : 0,
+      start: typeof u.start === 'number' ? u.start : undefined,
+      end: typeof u.end === 'number' ? u.end : undefined,
     }))
     .filter(u => u.text.length > 0)
   return jsonResponse(200, { ok: true, text, utterances })

@@ -60,6 +60,25 @@ describe('appendTurn — same-speaker continuation', () => {
   })
 })
 
+describe('appendTurn — wearer verdict', () => {
+  it('defaults to not-the-wearer and keeps the flag on the turn', () => {
+    const buf: ConversationTurn[] = []
+    appendTurn(buf, 0, 'hello', 1000)
+    appendTurn(buf, 1, 'this is me', 1100, true)
+    expect(buf.map(t => t.wearer)).toEqual([false, true])
+  })
+
+  it('does not merge same-speaker-id turns with different verdicts (ids restart every chunk)', () => {
+    const buf: ConversationTurn[] = []
+    appendTurn(buf, 0, 'how was your week', 1000, false)
+    appendTurn(buf, 0, 'pretty good thanks', 1100, true)
+    appendTurn(buf, 0, 'glad to hear', 1200, true)
+    expect(buf).toHaveLength(2)
+    expect(buf[1]!.text).toBe('pretty good thanks glad to hear')
+    expect(buf[1]!.wearer).toBe(true)
+  })
+})
+
 describe('pruneTurns', () => {
   it('drops turns older than scrollback window', () => {
     const buf: ConversationTurn[] = [
@@ -87,7 +106,7 @@ describe('pruneTurns', () => {
   it('appendTurn calls pruneTurns automatically', () => {
     const buf: ConversationTurn[] = []
     for (let i = 0; i < 10; i++) {
-      appendTurn(buf, i, `t${i}`, 1000 + i, { scrollbackMs: 60_000, hardCap: 3 })
+      appendTurn(buf, i, `t${i}`, 1000 + i, false, { scrollbackMs: 60_000, hardCap: 3 })
     }
     expect(buf).toHaveLength(3)
   })

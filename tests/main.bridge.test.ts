@@ -22,7 +22,7 @@ interface FakeRuntime {
   onDoubleTap: (h: (src: string) => void) => void
   onForeground: (h: () => void) => void
   onMenuSelect: (h: (id: number) => void) => void
-  startMic: (h: (frame: Uint8Array) => void) => Promise<boolean>
+  startMic: (h: (frame: Uint8Array, role: string) => void) => Promise<boolean>
   stopMic: () => Promise<void>
   exitApp: () => Promise<void>
   getStorage: (k: string) => Promise<string>

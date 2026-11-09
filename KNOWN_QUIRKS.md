@@ -84,6 +84,10 @@ The plugin docs reference these APIs but they're absent through v0.0.16. Re-fetc
 
 SDK 0.0.16 adds `audioEvent.speakerRole` (`self` / `other` / `unknown`) and a raw `direction` tag on glasses frames. The role is the Even app's guess from the direction sensor, not a firmware identity, and the phone mic (`audioControl(true, AudioInputSource.Phone)`) never carries one. Cue v0.6.0 gates on it behind a default-off setting and counts roles on the diagnostic overlay so the heuristic can be judged in the field before anything depends on it.
 
+### Deepgram batch speaker ids restart with every request
+
+With `diarize=true`, Deepgram numbers speakers from 0 in order of appearance **per request**. An app that sends audio in independent chunks (Cue: 2.5 s batch POSTs) gets `speaker: 0` for whoever spoke first in each chunk, so a stored "speaker A is me" is wrong roughly whenever the other person opens a chunk. Nothing in the response ties speaker 0 of one chunk to speaker 0 of the next. Cue v0.8.0 stopped relying on it: the per-frame Even `speakerRole` is recorded as ms spans per chunk and Deepgram's utterance `start`/`end` is laid over those spans to decide who spoke (`src/attribution.ts`). Any chunked diarization design needs its own cross-chunk identity; Deepgram's ids are not one.
+
 ### `bridge.audioControl(true)` returns truthy regardless of permission
 
 The return value indicates the call was accepted by the SDK, not that the OS granted mic permission. If the user denies mic on their phone, you'll still get a truthy return + zero audio frames. Only way to detect: count incoming audio frames and surface "no frames after Ns" as a UI signal.
